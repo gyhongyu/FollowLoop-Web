@@ -30,8 +30,8 @@ class DriveUploader {
     let sessionRes = null;
 
     try {
-      // 1. 第一階段：向 GAS Web App 請求上傳 Session URL (CORS 安全 text/plain 標頭)
-      sessionRes = await sendGasRequest("get_upload_session", {
+      // 1. 第一階段：向專用 Drive GAS 發送 get_upload_session 請求 (CORS 安全 text/plain 標頭)
+      sessionRes = await sendDriveGasRequest("get_upload_session", {
         filename: file.name,
         mimeType: file.type || "application/octet-stream",
         fileSize: file.size,
@@ -44,15 +44,15 @@ class DriveUploader {
       console.warn("[DriveUploader] 無法取得 Resumable Session URL，切換至 Base64 直接上傳 fallback: ", e);
     }
 
-    // 容錯 Fallback 路線：若未取得 sessionUrl，使用相容的 Base64 檔案上傳模式
+    // 容錯 Fallback 路線：若未取得 sessionUrl，使用相容的 Base64 檔案上傳模式 (傳送至專用 Drive GAS)
     if (!sessionUrl) {
-      console.log(`[DriveUploader] 採用安全 Base64 上傳模式將檔案存入 Google Drive...`);
+      console.log(`[DriveUploader] 採用安全 Base64 上傳模式將檔案存入 Google Drive (專用 GAS)...`);
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = async (evt) => {
           try {
             const base64Data = evt.target.result.split(',')[1];
-            const fallbackRes = await sendGasRequest("upload_file", {
+            const fallbackRes = await sendDriveGasRequest("upload_file", {
               filename: file.name,
               file_b64: base64Data,
               mime_type: file.type || "application/octet-stream",

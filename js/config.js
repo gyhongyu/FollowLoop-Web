@@ -6,8 +6,9 @@ const CONFIG = {
   APP_TITLE: "FollowLoop 閉環工程 AI 助理",
   VERSION: "v1.1.0-MVP",
   
-  // 權威 GAS Web App 與 Sheet ID 配置 (引自 e:/Projects/FollowLoop/config.py)
+  // 權威 GAS Web App 與 Sheet ID 配置
   GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbz8slAubwAOO7lbCi3xb5I0WmykqGM4DJyPbSXgOK3JDuCHWVA4APVmucb969BZqTnXGg/exec",
+  GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbywZiZgUu1pqrbQp43PDsiVQIrCE7fDvwTtdGd6_BaOzeozCX3DDJTg9iTWl1_8EXyw_g/exec",
   SPREADSHEET_ID: "1YgwlA-f5Iq487-0FVU2ChOckNVLb3h1ejbrUNkUr4WQ",
   
   // Google Drive 原始 Input 資料夾 ID (FollowLoop_RawInputs)
@@ -30,7 +31,7 @@ function createGasPayload(action, additionalParams = {}) {
   }, additionalParams);
 }
 
-// 輔助函式：安全發送 POST 請求至 GAS (避開 CORS 阻擋)
+// 輔助函式：安全發送 POST 請求至 GAS Sheets (避開 CORS 阻擋)
 async function sendGasRequest(action, additionalParams = {}) {
   const payload = createGasPayload(action, additionalParams);
   try {
@@ -48,6 +49,28 @@ async function sendGasRequest(action, additionalParams = {}) {
     return data;
   } catch (error) {
     console.error(`[GAS Request Error] Action (${action}):`, error);
+    throw error;
+  }
+}
+
+// 輔助函式：專門發送 POST 請求至 Google Drive 專用 GAS
+async function sendDriveGasRequest(action, additionalParams = {}) {
+  const payload = createGasPayload(action, additionalParams);
+  try {
+    const response = await fetch(CONFIG.GAS_DRIVE_URL, {
+      method: "POST",
+      headers: CONFIG.FETCH_HEADERS,
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`[GAS Drive Error] Action (${action}):`, error);
     throw error;
   }
 }
