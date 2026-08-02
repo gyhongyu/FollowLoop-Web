@@ -30,18 +30,41 @@ class DriveUploader {
     let sessionRes = null;
 
     try {
-      // 1. 第一階段：向專用 Drive GAS 發送 get_upload_session 請求 (CORS 安全 text/plain 標頭)
-      sessionRes = await sendDriveGasRequest("get_upload_session", {
+      // 1. 第一階段：向專用 Drive GAS 獲取授權 Token 與 Folder ID (零 UrlFetchApp 限制)
+      const tokenRes = await sendDriveGasRequest("get_drive_token", {
         filename: file.name,
         mimeType: file.type || "application/octet-stream",
         fileSize: file.size,
         userNotes: notes
       });
-      if (sessionRes && sessionRes.status === "success" && sessionRes.uploadUrl) {
-        sessionUrl = sessionRes.uploadUrl;
+
+      if (tokenRes && tokenRes.status === "success" && tokenRes.token && tokenRes.folder_id) {
+        console.log(`[DriveUploader] 成功取得 GAS OAuth Token，由前端瀏覽器向 Google Drive API 發起 Resumable Session...`);
+        
+        // 前端瀏覽器直接對 Google Drive API v3 發起 Resumable Session 申請
+        const metadata = {
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          parents: [tokenRes.folder_id]
+        };
+
+        const sessionInitResp = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable", {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + tokenRes.token,
+            "Content-Type": "application/json; charset=UTF-8",
+            "X-Upload-Content-Type": file.type || "application/octet-stream",
+            "X-Upload-Content-Length": file.size.toString()
+          },
+          body: JSON.stringify(metadata)
+        });
+
+        if (sessionInitResp.ok || sessionInitResp.status === 200) {
+          sessionUrl = sessionInitResp.headers.get("Location") || sessionInitResp.headers.get("location");
+        }
       }
     } catch (e) {
-      console.warn("[DriveUploader] 無法取得 Resumable Session URL，切換至 Base64 直接上傳 fallback: ", e);
+      console.warn("[DriveUploader] 前端發起 Resumable Session 異常，準備嘗試 fallback: ", e);
     }
 
     // 容錯 Fallback 路線：若未取得 sessionUrl，檢查檔案大小
