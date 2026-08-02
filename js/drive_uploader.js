@@ -44,9 +44,15 @@ class DriveUploader {
       console.warn("[DriveUploader] 無法取得 Resumable Session URL，切換至 Base64 直接上傳 fallback: ", e);
     }
 
-    // 容錯 Fallback 路線：若未取得 sessionUrl，使用相容的 Base64 檔案上傳模式 (傳送至專用 Drive GAS)
+    // 容錯 Fallback 路線：若未取得 sessionUrl，檢查檔案大小
     if (!sessionUrl) {
-      console.log(`[DriveUploader] 採用安全 Base64 上傳模式將檔案存入 Google Drive (專用 GAS)...`);
+      // 防禦機制：若檔案大於 10MB (10485760 bytes)，Base64 上傳會觸發 Google HTTP 413 (Content Too Large) 限制
+      if (file.size > 10 * 1024 * 1024) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        throw new Error(`檔案較大 (${sizeMb} MB)。請確保在 Google Apps Script 中點擊「執行」完成一次權限授權 (UrlFetchApp)，以開啟大檔案 Resumable 直傳！`);
+      }
+
+      console.log(`[DriveUploader] 小檔案 (${(file.size / 1024).toFixed(1)} KB) 採用 Base64 模式存入 Google Drive...`);
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = async (evt) => {
