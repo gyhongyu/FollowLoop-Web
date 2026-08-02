@@ -26,23 +26,59 @@ class DriveUploader {
 
     console.log(`[DriveUploader] 步驟 1/2: 向 GAS 申請 Resumable Session URL (${file.name}, ${file.size} bytes)`);
 
-    // 1. 第一階段：向 GAS Web App 請求上傳 Session URL (CORS 安全 text/plain 標頭)
-    const sessionRes = await sendGasRequest("get_upload_session", {
-      filename: file.name,
-      mimeType: file.type || "application/octet-stream",
-      fileSize: file.size,
-      userNotes: notes
-    });
+    let sessionUrl = null;
+    let sessionRes = null;
 
-    if (sessionRes.status !== "success" || !sessionRes.uploadUrl) {
-      // 處理如果後端回傳傳統接收或特定狀況的 fallback 訊息
-      if (sessionRes.file_id) {
-        return sessionRes;
+    try {
+      // 1. 第一階段：向 GAS Web App 請求上傳 Session URL (CORS 安全 text/plain 標頭)
+      sessionRes = await sendGasRequest("get_upload_session", {
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        fileSize: file.size,
+        userNotes: notes
+      });
+      if (sessionRes && sessionRes.status === "success" && sessionRes.uploadUrl) {
+        sessionUrl = sessionRes.uploadUrl;
       }
-      throw new Error(sessionRes.message || "取得 Google Drive 直傳 Session URL 失敗！");
+    } catch (e) {
+      console.warn("[DriveUploader] 無法取得 Resumable Session URL，切換至 Base64 直接上傳 fallback: ", e);
     }
 
-    const sessionUrl = sessionRes.uploadUrl;
+    // 容錯 Fallback 路線：若未取得 sessionUrl，使用相容的 Base64 檔案上傳模式
+    if (!sessionUrl) {
+      console.log(`[DriveUploader] 採用安全 Base64 上傳模式將檔案存入 Google Drive...`);
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+          try {
+            const base64Data = evt.target.result.split(',')[1];
+            const fallbackRes = await sendGasRequest("upload_file", {
+              filename: file.name,
+              file_b64: base64Data,
+              mime_type: file.type || "application/octet-stream",
+              user_notes: notes
+            });
+            if (fallbackRes.status === "success") {
+              resolve({
+                status: "success",
+                file_id: fallbackRes.file_id || "UPLOADED_DIRECTLY",
+                filename: file.name,
+                size: file.size,
+                notes: notes,
+                raw_url: fallbackRes.download_url || ""
+              });
+            } else {
+              reject(new Error(fallbackRes.message || "上傳至 Google Drive 失敗！"));
+            }
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(file);
+      });
+    }
+
     console.log(`[DriveUploader] 步驟 2/2: 前端開始直傳 Google Drive (PUT to Session URL)...`);
 
     // 2. 第二階段：前端使用 XMLHttpRequest 發起 PUT 直傳，即時更新進度條
