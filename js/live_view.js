@@ -148,28 +148,28 @@ class LiveView {
   }
 
   /**
-   * 向 GAS Web App 拉取 Raw 數據庫 (唯讀 GET，純 Promise 驅動全屏加載)
+   * 向 GAS Web App 並行拉取 Projects_Master 與 Memory_Pool_Raw (唯讀 GET，純 Promise 驅動全屏加載)
    */
   async fetchViewData(showOverlay = true) {
     if (showOverlay) {
-      this.showFullscreenLoading("正在載入 Raw 數據庫...", "恪守 memory_pool_raw_ssot_guard 獲取最新動態");
+      this.showFullscreenLoading("正在載入 Projects_Master 與 Raw 數據庫...", "恪守 memory_pool_raw_ssot_guard 執行雙表 1-to-N 聚合");
     }
 
     this.isLoading = true;
     try {
-      const res = await sendGasGetRequest();
+      // 1. 並行拉取 Projects_Master 與 Memory_Pool_Raw
+      const [rawRes, masterRes] = await Promise.all([
+        sendGasGetRequest("Memory_Pool_Raw"),
+        sendGasGetRequest("Projects_Master").catch(() => null)
+      ]);
 
-      if (res && res.status === "success" && Array.isArray(res.data) && res.data.length > 1) {
-        this.viewRows = this.parseMemoryPoolRaw(res.data);
-      } else if (res && res.status === "success" && Array.isArray(res.rows)) {
-        this.viewRows = this.parseMemoryPoolRaw(res.rows);
-      } else {
-        console.warn("[LiveView] 遠端未傳回 Raw 數據，載入預設看板:", res);
-        this.viewRows = this.parseMemoryPoolRaw(this.getMockRawRows());
-      }
+      const rawData = (rawRes && rawRes.status === "success" && Array.isArray(rawRes.data)) ? rawRes.data : (Array.isArray(rawRes?.rows) ? rawRes.rows : []);
+      const masterData = (masterRes && masterRes.status === "success" && Array.isArray(masterRes.data)) ? masterRes.data : (Array.isArray(masterRes?.rows) ? masterRes.rows : []);
+
+      this.viewRows = this.parseDualTableData(rawData, masterData);
     } catch (err) {
       console.warn("[LiveView] 無法連線讀取 Memory_Pool_Raw，載入本地降級看板與草稿:", err);
-      this.viewRows = this.parseMemoryPoolRaw(this.getMockRawRows());
+      this.viewRows = this.parseDualTableData(this.getMockRawRows(), []);
       if (window.showToast) {
         window.showToast("目前處於離線狀態，已為您載入本地歷史與草稿暫存！", "warning");
       }
@@ -184,102 +184,146 @@ class LiveView {
   }
 
   /**
-   * 前端 GroupBy 聚合演算法：將 Raw 原始條目與 Local Drafts 進行無縫 Overlay 融合
+   * 前端雙表 1-to-N 聚合演算法：將 Projects_Master 主檔與 Memory_Pool_Raw 流水帳及 Local Drafts 進行融合
    */
-  parseMemoryPoolRaw(rows) {
-    if (!rows || rows.length <= 1) return [];
-
+  parseDualTableData(rawRows, masterRows) {
     const drafts = window.draftStore.drafts;
-    const dataRows = rows.slice(1);
     const groups = {};
 
-    dataRows.forEach((row, idx) => {
-      const logId = row[0] || `RAW-${idx + 1}`;
-      const timestamp = row[1] || new Date().toISOString();
-      const projectTag = (row[2] || "General").trim();
-      const entityTarget = row[3] || "未指定單位";
-      const targetPurpose = row[4] || "";
-      const ourAdvantages = row[5] || "";
-      const actionTaken = row[6] || "處理中";
-      let updateLog = row[7] || "";
-      const attachmentLinks = row[8] || "";
-      const agentStatus = (row[10] || "APPROVED").toString().toUpperCase();
+    // 1. 先建立 Projects_Master 主檔 Map
+    if (Array.isArray(masterRows) && masterRows.length > 1) {
+      const mData = masterRows.slice(1);
+      mData.forEach(row => {
+        if (!row || !row[0]) return;
+        const pTag = String(row[0]).trim();
+        const accountName = String(row[1] || "").trim();
+        const contact = String(row[2] || "").trim();
+        const pName = String(row[3] || "").trim();
+        const stage = String(row[4] || "").trim();
+        const rawPrio = String(row[5] || "").toUpperCase().trim();
+        
+        let priority = "HIGH";
+        if (rawPrio === "PAUSED" || rawPrio === "🔴") priority = "PAUSED";
+        else if (rawPrio === "LOW" || rawPrio === "🟠") priority = "LOW";
 
-      // 檢查是否被本地草稿作廢/隱藏
-      const isDraftDeleted = drafts.deleted.includes(logId);
-      if (agentStatus === "ARCHIVED" || agentStatus === "REJECTED" || isDraftDeleted) return;
-
-      // 檢查是否被本地草稿編輯
-      let isDraftEdit = false;
-      if (drafts.edited[logId]) {
-        updateLog = drafts.edited[logId].updateLog;
-        isDraftEdit = true;
-      }
-
-      // 讀取第 12 欄真實優先權 (SSOT 嚴格精準比對，空白者 100% 傳回 UNSET，絕不假造綠燈)
-      let priority = "UNSET";
-      const rawPriority = row[11] ? String(row[11]).trim().toUpperCase() : "";
-      if (rawPriority === "PAUSED" || rawPriority === "INACTIVE" || rawPriority === "🔴") {
-        priority = "PAUSED";
-      } else if (rawPriority === "LOW" || rawPriority === "PASSIVE" || rawPriority === "🟠") {
-        priority = "LOW";
-      } else if (rawPriority === "HIGH" || rawPriority === "ACTIVE" || rawPriority === "🟢") {
-        priority = "HIGH";
-      }
-
-      if (!groups[projectTag]) {
-        groups[projectTag] = {
-          projectTag: projectTag,
-          entityTarget: entityTarget,
-          targetPurpose: targetPurpose,
-          ourAdvantages: ourAdvantages,
-          latestAction: actionTaken,
+        groups[pTag] = {
+          projectTag: pTag,
+          accountName: accountName,
+          primaryContact: contact,
+          projectName: pName,
+          displayName: pName ? `${accountName} - ${pName}` : (accountName || pTag),
+          stage: stage || "進行中",
           priority: priority,
+          annualQuantity: row[6] || "",
+          annualRevenue: row[7] || "",
+          currency: row[8] || "USD",
+          probability: row[9] || "",
+          targetPurpose: row[10] || "",
+          ourLeveragePoint: row[11] || "",
+          ourAdvantages: row[12] || "",
+          leadSource: row[13] || "",
+          owner: row[14] || "Michael",
+          projectStatus: row[15] || "ACTIVE",
           logs: []
         };
-      }
-
-      if (entityTarget) groups[projectTag].entityTarget = entityTarget;
-      if (targetPurpose) groups[projectTag].targetPurpose = targetPurpose;
-      if (ourAdvantages) groups[projectTag].ourAdvantages = ourAdvantages;
-      if (actionTaken) groups[projectTag].latestAction = actionTaken;
-      if (priority && priority !== "UNSET") groups[projectTag].priority = priority;
-
-      groups[projectTag].logs.push({
-        logId: logId,
-        timestamp: timestamp,
-        updateLog: updateLog || `${actionTaken} - ${entityTarget}`,
-        actionTaken: actionTaken,
-        attachmentLinks: attachmentLinks,
-        isDraft: false,
-        isDraftEdit: isDraftEdit
       });
-    });
+    }
 
-    // 融合本地新追加的草稿 (Appended Drafts)
-    drafts.appended.forEach((draft) => {
+    // 2. 融合 Memory_Pool_Raw 流水帳
+    if (Array.isArray(rawRows) && rawRows.length > 1) {
+      const rData = rawRows.slice(1);
+      rData.forEach((row, idx) => {
+        const logId = row[0] || `RAW-${idx + 1}`;
+        const timestamp = row[1] || new Date().toISOString();
+        const projectTag = (row[2] || "General").trim();
+        const entityTarget = row[3] || "未指定單位";
+        const targetPurpose = row[4] || "";
+        const ourAdvantages = row[5] || "";
+        const actionTaken = row[6] || "處理中";
+        let updateLog = row[7] || "";
+        const attachmentLinks = row[8] || "";
+        const agentStatus = (row[10] || "APPROVED").toString().toUpperCase();
+
+        const isDraftDeleted = drafts.deleted.includes(logId);
+        if (agentStatus === "ARCHIVED" || agentStatus === "REJECTED" || isDraftDeleted) return;
+
+        if (drafts.edited[logId]) {
+          updateLog = drafts.edited[logId].updateLog;
+        }
+
+        // 若主檔中尚未定義此 projectTag (Graceful Fallback 補全)
+        if (!groups[projectTag]) {
+          let priority = "HIGH";
+          const rawPrio = row[11] ? String(row[11]).toUpperCase().trim() : "";
+          if (rawPrio === "PAUSED" || rawPrio === "🔴") priority = "PAUSED";
+          else if (rawPrio === "LOW" || rawPrio === "🟠") priority = "LOW";
+
+          groups[projectTag] = {
+            projectTag: projectTag,
+            accountName: entityTarget,
+            primaryContact: "",
+            projectName: "",
+            displayName: entityTarget ? `${entityTarget} (${projectTag})` : projectTag,
+            stage: "進行中",
+            priority: priority,
+            annualQuantity: "",
+            annualRevenue: "",
+            currency: "USD",
+            probability: "",
+            targetPurpose: targetPurpose,
+            ourLeveragePoint: "",
+            ourAdvantages: ourAdvantages,
+            leadSource: "",
+            owner: "Michael",
+            projectStatus: "ACTIVE",
+            logs: []
+          };
+        }
+
+        groups[projectTag].logs.push({
+          logId: logId,
+          timestamp: timestamp,
+          updateLog: updateLog || `${actionTaken} - ${entityTarget}`,
+          actionTaken: actionTaken,
+          attachmentLinks: attachmentLinks,
+          isDraft: false
+        });
+      });
+    }
+
+    // 3. 融合本地新追加之草稿
+    drafts.appended.forEach(draft => {
       const tag = draft.projectTag || "General";
       if (!groups[tag]) {
         groups[tag] = {
           projectTag: tag,
-          entityTarget: draft.entityTarget || "未指定單位",
-          targetPurpose: "本地草稿專案",
-          ourAdvantages: "即時追蹤",
-          latestAction: draft.actionTaken || "最新跟進 (草稿)",
+          accountName: draft.entityTarget || "未指定單位",
+          primaryContact: "",
+          projectName: "本地草稿專案",
+          displayName: draft.entityTarget ? `${draft.entityTarget} (草稿)` : tag,
+          stage: "草稿階段",
           priority: draft.priority || "HIGH",
+          annualQuantity: "",
+          annualRevenue: "",
+          currency: "USD",
+          probability: "",
+          targetPurpose: "即時跟進草稿",
+          ourLeveragePoint: "",
+          ourAdvantages: "本地暫存",
+          leadSource: "",
+          owner: "Michael",
+          projectStatus: "ACTIVE",
           logs: []
         };
       }
 
-      // 新增草稿放在頂端 (Newest First)
       groups[tag].logs.unshift({
         logId: draft.logId,
         timestamp: draft.timestamp,
         updateLog: draft.updateLog,
-        actionTaken: draft.actionTaken,
+        actionTaken: draft.actionTaken || "最新跟進 (草稿)",
         attachmentLinks: "",
-        isDraft: true,
-        isDraftEdit: false
+        isDraft: true
       });
     });
 
@@ -288,24 +332,31 @@ class LiveView {
 
     return projectKeys.map((tag, idx) => {
       const g = groups[tag];
-
-      // 排序時間軸 (最新在最上面)
       g.logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      const timelineText = g.logs.map((l) => `${l.updateLog}`).join("\n\n");
+      const latestLog = g.logs[0] || {};
+      const timelineText = g.logs.map(l => `${l.updateLog}`).join("\n\n");
 
       return {
         id: `KPI-${idx + 1}`,
         itemCode: g.projectTag,
-        entity: g.entityTarget,
-        taskName: g.targetPurpose || g.entityTarget,
-        ourAdvantages: g.ourAdvantages,
-        actionTaken: g.latestAction,
-        tag: g.latestAction || "追蹤中",
+        accountName: g.accountName,
+        projectName: g.projectName,
+        entity: g.displayName,
+        taskName: g.projectName ? `${g.accountName} - ${g.projectName}` : (g.accountName ? `${g.accountName} (早期探勘)` : g.projectTag),
+        stage: g.stage,
         priority: g.priority || "HIGH",
+        annualQuantity: g.annualQuantity,
+        annualRevenue: g.annualRevenue,
+        currency: g.currency,
+        targetPurpose: g.targetPurpose,
+        ourLeveragePoint: g.ourLeveragePoint,
+        ourAdvantages: g.ourAdvantages,
+        nextStep: latestLog.updateLog || "尚無最新動態紀錄",
+        actionTaken: latestLog.actionTaken || "追蹤中",
+        tag: g.stage || "追蹤中",
         timelineHistory: timelineText || "尚無詳細動態紀錄",
         rawLogs: g.logs,
-        lastUpdated: new Date().toLocaleDateString()
+        lastUpdated: latestLog.timestamp ? new Date(latestLog.timestamp).toLocaleDateString() : new Date().toLocaleDateString()
       };
     });
   }

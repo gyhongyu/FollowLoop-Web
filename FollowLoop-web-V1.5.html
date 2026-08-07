@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FollowLoop - 雙表 CRM 專案看板 (V1.5 1-to-N 雙表解耦版)</title>
+  <meta name="description" content="FollowLoop 閉環工程 AI 助理 - Projects_Master 與 Memory_Pool_Raw 雙表 1-to-N 專案看板 V1.5">
+
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+
+  <!-- 全屏 Loading Blocking 遮罩 (純 Promise 驅動) -->
+  <div class="fullscreen-loading-overlay" id="fullscreen-loading-overlay">
+    <div class="loading-box">
+      <div class="loading-spinner"></div>
+      <div class="loading-title" id="loading-overlay-title">正在載入 Projects_Master 與 Raw 數據庫...</div>
+      <div class="loading-subtext" id="loading-overlay-subtext">請稍候，雙表 1-to-N 關聯與動態 GroupBy 聚合進行中</div>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header 導覽列與 Tab 切換 -->
+    <header class="app-header">
+      <div class="brand-logo" style="display: flex; align-items: center;">
+        <img src="img/wlogo_foxlink_s.png" alt="FOXLINK Logo" style="height: 32px; width: auto; margin-right: 14px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));">
+        <div>
+          <h1 class="brand-title" style="margin: 0; font-size: 1.25rem;">FollowLoop Web Gate</h1>
+          <span class="brand-badge" style="background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.4);">V1.5-DualTable</span>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <!-- 默認 active 頁籤：⚡ 直傳門閥 -->
+        <button class="nav-tab-btn active" data-tab="ingestion">
+          <span>⚡ 直傳門閥</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="hitl">
+          <span>🤖 HITL 審核</span>
+          <span class="badge-count" id="hitl-badge-count">0</span>
+        </button>
+        <!-- 分頁名稱：💎 雙表 CRM 專案看板 -->
+        <button class="nav-tab-btn" data-tab="liveview">
+          <span>💎 雙表 CRM 專案看板</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- 本地未同步草稿提示列 (Local Draft Status Bar) -->
+    <div class="draft-alert-bar hidden" id="draft-alert-bar">
+      <div class="draft-info">
+        <span class="draft-badge">⚠️ 本地草稿暫存中</span>
+        <span id="draft-alert-text">您目前有 0 筆未同步至雲端的變更（斷線或關閉網頁均不遺失）</span>
+      </div>
+      <div class="draft-actions">
+        <button class="btn-draft-discard" id="btn-draft-discard">🗑️ 放棄本地變更</button>
+        <button class="btn-draft-sync" id="btn-draft-sync">🚀 更新至雲端 (Sync)</button>
+      </div>
+    </div>
+
+    <!-- 主內容區 (三大模組 Single Page Application) -->
+    <main>
+
+      <!-- --------------------------------------------------------------------
+           模組一：多端 Raw Data 上傳門閥 (Ingestion Gate) — 預設開啟
+           -------------------------------------------------------------------- -->
+      <section class="tab-content-section active" id="tab-section-ingestion">
+        <div class="ingestion-grid">
+          
+          <!-- 大檔與影音直傳區 -->
+          <div class="card-panel">
+            <h2 class="panel-title">
+              <span class="icon">📁</span> 二階段大檔直傳 FollowLoop (Resumable Upload)
+            </h2>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 18px;">
+              支援影音 (.mp3, .m4a)、影片 (100MB~200MB+)、PDF 與圖片檔。直傳 Session 完全繞過 GAS 中轉，安全直達 Google Drive。
+            </p>
+
+            <div class="dropzone" id="dropzone">
+              <div class="dropzone-icon">☁️</div>
+              <div class="dropzone-text">點擊選取檔案 或 將大檔案拖曳至此處</div>
+              <div class="dropzone-subtext">自動觸發二階段 Resumable Session 直傳 Google Drive</div>
+              <input type="file" id="file-input" style="display: none;" accept="audio/*,video/*,image/*,.pdf,.docx,.txt">
+            </div>
+
+            <div class="progress-container" id="progress-container">
+              <div class="progress-header">
+                <span id="progress-text">準備上傳 (0%)...</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-bar-fill"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 麥克風錄音與快捷速記 -->
+          <div class="card-panel">
+            <h2 class="panel-title">
+              <span class="icon">🎙️</span> 麥克風錄音與快捷速記
+            </h2>
+
+            <div class="recorder-box">
+              <button class="mic-btn" id="mic-btn" title="按一下開始/停止錄音">🎤</button>
+              <div class="timer-text" id="timer-text">00:00</div>
+              <span style="font-size: 0.8rem; color: var(--text-subtle); margin-top: 6px;">錄製完成自動直傳 Google Drive 進行 Whisper 轉寫</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="note-textarea">💡 補充會議紀錄 / 文字速記</label>
+              <textarea class="note-textarea" id="note-textarea" placeholder="例如：「今天與 VVDN 採購 Manikandan 進行線上記者會討論，結論提及交期...」"></textarea>
+            </div>
+
+            <button class="btn-primary" id="submit-note-btn" style="width: 100%; justify-content: center;">
+              <span>🚀 傳送至 FollowLoop 門閥</span>
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------------------
+           模組二：人工審核與澄清卡片關卡 (HITL Review Gate)
+           -------------------------------------------------------------------- -->
+      <section class="tab-content-section" id="tab-section-hitl">
+        <div class="hitl-container">
+          <div class="hitl-header-bar">
+            <div>
+              <h2 class="panel-title" style="margin-bottom: 4px;">🤖 HITL 人工審核關卡 (Human-In-The-Loop)</h2>
+              <p style="font-size: 0.85rem; color: var(--text-muted);">
+                本機 AI 智腦完成 Raw Data 結構化提煉後，呈報待確認卡片。請點擊 [是 / 修改 / 否] 執行關卡決策。
+              </p>
+            </div>
+            <button class="btn-primary" id="hitl-refresh-btn" style="padding: 8px 16px; font-size: 0.88rem;">
+              <span>🔄 重新整理</span>
+            </button>
+          </div>
+
+          <!-- 動態卡片網格 -->
+          <div class="hitl-card-grid" id="hitl-card-grid">
+            <!-- 由 hitl_reviewer.js 自動渲染 -->
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------------------
+           模組三：💎 雙表 CRM 專案看板 (V1.5 雙表 1-to-N 聚合看板)
+           -------------------------------------------------------------------- -->
+      <section class="tab-content-section" id="tab-section-liveview">
+        <div class="liveview-toolbar">
+          <div>
+            <h2 class="panel-title" style="margin-bottom: 4px;">💎 雙表 CRM 專案看板 (Projects_Master + Raw)</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              對接 18 欄 CRM 專案主檔與時間軸流水帳，支援高優先權 (🟢)、低優先權 (🟠) 與暫停行動 (🔴) 分類與無專案容錯展示。
+            </p>
+          </div>
+
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <div class="search-input-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="kpi-search-input" placeholder="搜尋專案對象、商機名稱或動態內文...">
+            </div>
+
+            <!-- 下拉選單擴充：支援三大專案等級分類 -->
+            <select class="form-control" id="kpi-filter-select" style="width: auto; min-width: 180px;">
+              <option value="ALL">🌐 全部專案項目</option>
+              <option value="HIGH">🟢 主動進行 / 高優先權</option>
+              <option value="LOW">🟠 被動進行 / 低優先權</option>
+              <option value="PAUSED">🔴 暫停行動</option>
+            </select>
+
+            <button class="btn-primary" id="liveview-refresh-btn" style="padding: 10px 16px;">
+              <span>🔄 載入雙表數據庫</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 專案 KPI 網格容器 -->
+        <div class="kpi-grid" id="kpi-grid-container">
+          <!-- 由 live_view.js 與 app.js 自動渲染 -->
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toast 訊息顯示區 -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Modal 1: HITL 修改卡片彈窗 -->
+  <div class="modal-backdrop" id="edit-modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">✎ 修改與批准卡片內容</h3>
+        <button class="modal-close" onclick="closeEditModal()">✕</button>
+      </div>
+      <input type="hidden" id="modal-card-id">
+      <div class="form-group">
+        <label class="form-label" for="modal-entity">權責主體 (Entity / Target)</label>
+        <input type="text" class="form-control" id="modal-entity">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="modal-action">最新動態摘要 (Action Taken)</label>
+        <input type="text" class="form-control" id="modal-action">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="modal-tag">專案標籤 (Project Tag / Item Code)</label>
+        <input type="text" class="form-control" id="modal-tag">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="modal-details">原始內文 (Raw Text)</label>
+        <textarea class="note-textarea" id="modal-details" style="height: 90px;"></textarea>
+      </div>
+      <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+        <button class="btn-reject" style="flex: 0; padding: 10px 20px;" onclick="closeEditModal()">取消</button>
+        <button class="btn-approve" style="flex: 0; padding: 10px 24px;" onclick="submitEditCard()">確認修正並寫入 Memory_Pool_Raw</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: 專案詳情與垂直時間軸 CRUD 彈窗 (V1.5 雙表 18 欄升級版) -->
+  <div class="modal-backdrop" id="detail-modal-backdrop">
+    <div class="modal-card" style="max-width: 760px; max-height: 90vh; display: flex; flex-direction: column;">
+      
+      <!-- 頂部 Header -->
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="detail-entity-title" style="font-size: 1.25rem; font-weight: 700; color: #f8fafc;">🏢 專案詳情 (Projects_Master)</h3>
+          <div style="font-size: 0.8rem; color: #60a5fa; margin-top: 2px;" id="detail-project-tag-sub">Tag: General</div>
+        </div>
+        <button class="modal-close" onclick="closeDetailModal()">✕</button>
+      </div>
+
+      <!-- Modal 可滾動主體 -->
+      <div style="overflow-y: auto; flex: 1; padding-right: 6px;">
+        
+        <!-- 核心權責與對象標題區 -->
+        <div class="form-group">
+          <div id="detail-entity" style="color: var(--text-main); background: rgba(30, 41, 59, 0.6); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);"></div>
+        </div>
+
+        <!-- ➕ 新增最新跟進紀錄面板 (Local Draft) -->
+        <div class="timeline-add-box">
+          <div style="font-size: 0.9rem; font-weight: 700; color: #38bdf8; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>➕ 新增最新跟進紀錄</span>
+            <span style="font-size: 0.72rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 6px; border-radius: 4px;">本地暫存</span>
+          </div>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="new-timeline-input" class="form-control" style="flex: 1; min-width: 240px;" placeholder="例如：「2026/08/07 完成最新會議確認及報價細節...」">
+            <button class="btn-primary" id="btn-add-timeline-log" style="padding: 8px 18px; white-space: nowrap;">
+              <span>➕ 暫存至本地</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 📜 垂直時間軸 (Newest First 倒序歷史紀錄鏈) -->
+        <div class="form-group" style="margin-top: 18px;">
+          <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>📜 動態歷程時間軸 (最新在最上面)</span>
+            <span style="font-size: 0.76rem; color: #94a3b8;">編輯/作廢僅暫存本地，需按「更新至雲端」生效</span>
+          </label>
+          
+          <div class="timeline-spine-container" id="detail-timeline-spine">
+            <!-- 由 app.js 動態渲染垂直時間軸與 CRUD 操作按鈕 -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 底部關閉按鈕區 -->
+      <div style="display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+        <button class="btn-primary" onclick="closeDetailModal()">完成</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Application Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/drive_uploader.js"></script>
+  <script src="js/hitl_reviewer.js"></script>
+  <script src="js/live_view.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
