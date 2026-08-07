@@ -4,10 +4,13 @@
  */
 const CONFIG = {
   APP_TITLE: "FollowLoop 閉環工程 AI 助理",
-  VERSION: "v1.1.0-MVP",
+  VERSION: "v1.2.0-Draft-SSOT",
   
-  // 權威 GAS Web App 與 Sheet ID 配置
+  // 權威 雙 GAS Web App 網址配置 (恪守 dual_gas_url_contract_guard 天條)
+  // 1. Google Sheets 數據庫與 Live 看板專用 (模組二 & 模組三)
   GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbz8slAubwAOO7lbCi3xb5I0WmykqGM4DJyPbSXgOK3JDuCHWVA4APVmucb969BZqTnXGg/exec",
+  
+  // 2. Google Drive 二階段大檔直傳專用 (模組一 ⚡ 直傳門閥)
   GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbywZiZgUu1pqrbQp43PDsiVQIrCE7fDvwTtdGd6_BaOzeozCX3DDJTg9iTWl1_8EXyw_g/exec",
   SPREADSHEET_ID: "1YgwlA-f5Iq487-0FVU2ChOckNVLb3h1ejbrUNkUr4WQ",
   
@@ -49,6 +52,26 @@ async function sendGasRequest(action, additionalParams = {}) {
     return data;
   } catch (error) {
     console.error(`[GAS Request Error] Action (${action}):`, error);
+    throw error;
+  }
+}
+
+// 輔助函式：安全發送 GET 請求至 GAS Sheets 讀取 Memory_Pool_View 唯讀數據
+async function sendGasGetRequest() {
+  try {
+    const url = `${CONFIG.GAS_WEB_APP_URL}?spreadsheet_id=${CONFIG.SPREADSHEET_ID}&t=${Date.now()}`;
+    const response = await fetch(url, {
+      method: "GET"
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP GET 錯誤! 狀態碼: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("[GAS GET Request Error]:", error);
     throw error;
   }
 }
