@@ -520,32 +520,63 @@ function renderLiveViewGrid() {
   }
 
   container.innerHTML = rows
-    .map(
-      (item) => `
-    <div class="kpi-card" onclick="openKpiDetailModal('${item.id}')" style="position: relative;">
-      <div>
-        <div class="kpi-header">
-          <span style="font-size: 0.78rem; color: #60a5fa; background: rgba(96, 165, 250, 0.12); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(96, 165, 250, 0.25);">Tag: ${item.itemCode}</span>
-          <span style="background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); padding: 2px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: 600;">🚀 ${item.actionTaken || "進行中"}</span>
+    .map((item) => {
+      // 提取最新單條動態內容與日期
+      const latestObj = (item.rawLogs && item.rawLogs.length > 0) ? item.rawLogs[0] : null;
+      const latestText = latestObj ? latestObj.updateLog : (item.timelineHistory || "尚無詳細動態紀錄");
+      
+      let displayDate = item.lastUpdated;
+      if (latestObj && latestObj.timestamp) {
+        try {
+          const d = new Date(latestObj.timestamp);
+          if (!isNaN(d.getTime())) {
+            displayDate = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+          }
+        } catch(e) {}
+      }
+
+      // 專案等級發光燈號與 tooltip 提示 (SSOT 真實對映，未填者顯示 ⚪ 未設定)
+      let priorityIcon = "⚪";
+      let priorityTitle = "未設定 (數據庫第 12 欄為空)";
+      let priorityClass = "priority-unset";
+      
+      if (item.priority === "HIGH") {
+        priorityIcon = "🟢";
+        priorityTitle = "高優先權 / 主動進行";
+        priorityClass = "priority-high";
+      } else if (item.priority === "LOW") {
+        priorityIcon = "🟠";
+        priorityTitle = "低優先權 / 被動進行";
+        priorityClass = "priority-low";
+      } else if (item.priority === "PAUSED") {
+        priorityIcon = "🔴";
+        priorityTitle = "暫停行動";
+        priorityClass = "priority-paused";
+      }
+
+      return `
+    <div class="kpi-card minimalist-kpi-card" onclick="openKpiDetailModal('${item.id}')" style="cursor: pointer;">
+      <div class="kpi-card-content">
+        <!-- 🏢 對象標題與三級優先權發光點 -->
+        <div class="kpi-entity-title">
+          <span class="priority-dot ${priorityClass}" title="專案等級：${priorityTitle}">${priorityIcon}</span>
+          <span>🏢 ${item.entity}</span>
         </div>
         
-        <!-- 突出顯示權責與商業主體 entity (隱藏 Item_01 硬碼為主的展示) -->
-        <div class="kpi-title" style="font-size: 1.15rem; font-weight: 700; color: #f8fafc; margin: 10px 0 6px 0; line-height: 1.35;">🏢 ${item.entity}</div>
-        
-        ${item.taskName ? `<div style="font-size: 0.86rem; color: #cbd5e1; margin-bottom: 6px;">🎯 <strong>對方訴求：</strong>${item.taskName}</div>` : ""}
-        ${item.ourAdvantages ? `<div style="font-size: 0.84rem; color: #fbbf24; margin-bottom: 10px;">💡 <strong>我方切入點：</strong>${item.ourAdvantages}</div>` : ""}
-        
-        <!-- 最新一筆動態預覽 -->
-        <div class="kpi-timeline-preview" style="font-size: 0.82rem; color: #94a3b8; background: rgba(15, 23, 42, 0.6); padding: 8px 10px; border-radius: 6px; white-space: pre-line; max-height: 64px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${item.timelineHistory}</div>
+        <!-- ⏱️ 最新一條動態區塊 (含日期標記) -->
+        <div class="kpi-latest-block">
+          <div class="kpi-date-badge">📅 ${displayDate}</div>
+          <div class="kpi-latest-text">${latestText}</div>
+        </div>
       </div>
       
-      <div style="font-size: 0.75rem; color: var(--text-subtle); margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
-        <span>Memory_Pool_Raw 實時跟進</span>
-        <span style="color: #64748b;">${item.lastUpdated}</span>
+      <!-- 卡片底端提示 (極簡展延提示) -->
+      <div class="kpi-card-footer">
+        <span>點擊看完整歷程 ∨</span>
       </div>
     </div>
-  `
-    )
+  `;
+    })
     .join("");
 }
 

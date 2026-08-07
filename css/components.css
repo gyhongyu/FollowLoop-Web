@@ -756,3 +756,107 @@
   color: #fca5a5;
 }
 
+/* --------------------------------------------------------------------------
+   V1.3 極簡專案卡 (Minimalist KPI Card Styles)
+   -------------------------------------------------------------------------- */
+.minimalist-kpi-card {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px;
+  background: var(--gradient-card);
+  backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  transition: all 0.22s ease-in-out;
+}
+
+.minimalist-kpi-card:hover {
+  border-color: var(--primary-light);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
+  transform: translateY(-3px);
+}
+
+.kpi-entity-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 12px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.kpi-latest-block {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.kpi-date-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #38bdf8;
+  margin-bottom: 6px;
+}
+
+.kpi-latest-text {
+  font-size: 0.86rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: 64px;
+}
+
+.kpi-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  font-size: 0.76rem;
+  color: #64748b;
+  margin-top: 10px;
+  transition: color 0.2s ease;
+}
+
+.minimalist-kpi-card:hover .kpi-card-footer {
+  color: #818cf8;
+}
+
+/* 三級專案等級燈號 (Priority Dots) */
+.priority-dot {
+  font-size: 0.95rem;
+  margin-right: 6px;
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.2));
+  transition: transform 0.2s ease;
+}
+
+.minimalist-kpi-card:hover .priority-dot {
+  transform: scale(1.2);
+}
+
+.priority-dot.priority-high {
+  filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.6));
+}
+
+.priority-dot.priority-low {
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.6));
+}
+
+.priority-dot.priority-paused {
+  filter: drop-shadow(0 0 6px rgba(248, 113, 113, 0.6));
+}
+
+.priority-dot.priority-unset {
+  opacity: 0.45;
+  filter: grayscale(100%);
+}
+

@@ -216,6 +216,17 @@ class LiveView {
         isDraftEdit = true;
       }
 
+      // 讀取第 12 欄真實優先權 (SSOT 嚴格精準比對，空白者 100% 傳回 UNSET，絕不假造綠燈)
+      let priority = "UNSET";
+      const rawPriority = row[11] ? String(row[11]).trim().toUpperCase() : "";
+      if (rawPriority === "PAUSED" || rawPriority === "INACTIVE" || rawPriority === "🔴") {
+        priority = "PAUSED";
+      } else if (rawPriority === "LOW" || rawPriority === "PASSIVE" || rawPriority === "🟠") {
+        priority = "LOW";
+      } else if (rawPriority === "HIGH" || rawPriority === "ACTIVE" || rawPriority === "🟢") {
+        priority = "HIGH";
+      }
+
       if (!groups[projectTag]) {
         groups[projectTag] = {
           projectTag: projectTag,
@@ -223,6 +234,7 @@ class LiveView {
           targetPurpose: targetPurpose,
           ourAdvantages: ourAdvantages,
           latestAction: actionTaken,
+          priority: priority,
           logs: []
         };
       }
@@ -231,6 +243,7 @@ class LiveView {
       if (targetPurpose) groups[projectTag].targetPurpose = targetPurpose;
       if (ourAdvantages) groups[projectTag].ourAdvantages = ourAdvantages;
       if (actionTaken) groups[projectTag].latestAction = actionTaken;
+      if (priority && priority !== "UNSET") groups[projectTag].priority = priority;
 
       groups[projectTag].logs.push({
         logId: logId,
@@ -253,6 +266,7 @@ class LiveView {
           targetPurpose: "本地草稿專案",
           ourAdvantages: "即時追蹤",
           latestAction: draft.actionTaken || "最新跟進 (草稿)",
+          priority: draft.priority || "HIGH",
           logs: []
         };
       }
@@ -288,6 +302,7 @@ class LiveView {
         ourAdvantages: g.ourAdvantages,
         actionTaken: g.latestAction,
         tag: g.latestAction || "追蹤中",
+        priority: g.priority || "HIGH",
         timelineHistory: timelineText || "尚無詳細動態紀錄",
         rawLogs: g.logs,
         lastUpdated: new Date().toLocaleDateString()
@@ -316,10 +331,16 @@ class LiveView {
         item.taskName.toLowerCase().includes(this.searchQuery) ||
         item.timelineHistory.toLowerCase().includes(this.searchQuery);
 
-      const matchCategory =
-        this.selectedCategory === "ALL" ||
-        item.tag === this.selectedCategory ||
-        (this.selectedCategory === "ACTIVE" && item.tag !== "已完結");
+      let matchCategory = true;
+      if (this.selectedCategory === "HIGH") {
+        matchCategory = (item.priority === "HIGH");
+      } else if (this.selectedCategory === "LOW") {
+        matchCategory = (item.priority === "LOW");
+      } else if (this.selectedCategory === "PAUSED") {
+        matchCategory = (item.priority === "PAUSED");
+      } else if (this.selectedCategory === "ACTIVE") {
+        matchCategory = (item.priority !== "PAUSED");
+      }
 
       return matchQuery && matchCategory;
     });
