@@ -1,0 +1,385 @@
+/* ==========================================================================
+   FollowLoop-Web 多套主題配色系統 (themes.css)
+   透過 html[data-theme="xxx"] 覆蓋 :root CSS 變數
+   支援深色、淺色 (Light Mode)、高對比等多樣化風格
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   主題 1: midnight (深邃午夜 - 深色經典高對比)
+   -------------------------------------------------------------------------- */
+html[data-theme="midnight"] {
+  --bg-dark-base: #0b0f19;
+  --bg-dark-surface: #111827;
+  --bg-card-glass: rgba(17, 24, 39, 0.85);
+  --bg-glass-hover: rgba(30, 41, 59, 0.95);
+  --bg-panel-deep: rgba(15, 23, 42, 0.7);
+  --bg-panel-medium: rgba(15, 23, 42, 0.8);
+  --bg-panel-light: rgba(15, 23, 42, 0.6);
+  --bg-card-solid: #1e293b;
+  --bg-input: rgba(15, 23, 42, 0.85);
+  --bg-input-deep: #0f172a;
+  --bg-hero-banner: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --bg-loading: #1e293b;
+  --bg-modal-backdrop: rgba(0, 0, 0, 0.8);
+  --bg-dropzone: rgba(15, 23, 42, 0.6);
+  --bg-dropzone-hover: rgba(99, 102, 241, 0.12);
+  --bg-btn-ghost: rgba(255, 255, 255, 0.1);
+  --bg-kpi-latest: #0f172a;
+
+  --border-glass: #334155;
+  --border-glass-glow: #6366f1;
+  --border-card: #334155;
+  --border-card-light: #1e293b;
+  --border-card-medium: #475569;
+  --border-card-strong: #64748b;
+
+  --primary-color: #6366f1;
+  --primary-light: #818cf8;
+  --primary-dark: #4f46e5;
+  --gradient-accent: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  --gradient-card: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+
+  --shadow-glow: 0 0 25px rgba(99, 102, 241, 0.35);
+  --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
+
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+  --text-heading: #ffffff;
+  --text-body: #cbd5e1;
+  --text-card-content: #f8fafc;
+  --text-attr: #e2e8f0;
+
+  --body-bg-a: rgba(99, 102, 241, 0.18);
+  --body-bg-b: rgba(236, 72, 153, 0.14);
+}
+
+/* --------------------------------------------------------------------------
+   主題 2: light-slate (極簡純白 - 淺色清爽亮底 ☀️)
+   -------------------------------------------------------------------------- */
+html[data-theme="light-slate"] {
+  --bg-dark-base: #e2e8f0;
+  --bg-dark-surface: #ffffff;
+  --bg-card-glass: #ffffff;
+  --bg-glass-hover: #f8fafc;
+  --bg-panel-deep: #f8fafc;
+  --bg-panel-medium: #f1f5f9;
+  --bg-panel-light: #ffffff;
+  --bg-card-solid: #ffffff;
+  --bg-input: #ffffff;
+  --bg-input-deep: #f8fafc;
+  --bg-hero-banner: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+  --bg-loading: #ffffff;
+  --bg-modal-backdrop: rgba(15, 23, 42, 0.6);
+  --bg-dropzone: #f8fafc;
+  --bg-dropzone-hover: #e0e7ff;
+  --bg-btn-ghost: #e2e8f0;
+  --bg-kpi-latest: #f1f5f9;
+
+  --border-glass: #94a3b8;
+  --border-glass-glow: #4f46e5;
+  --border-card: #cbd5e1;
+  --border-card-light: #cbd5e1;
+  --border-card-medium: #94a3b8;
+  --border-card-strong: #64748b;
+
+  --primary-color: #4f46e5;
+  --primary-light: #6366f1;
+  --primary-dark: #3730a3;
+  --gradient-accent: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  --gradient-card: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+
+  --shadow-glow: 0 4px 20px rgba(79, 70, 229, 0.2);
+  --shadow-card: 0 4px 20px rgba(15, 23, 42, 0.12);
+
+  --text-main: #0f172a;
+  --text-muted: #334155;
+  --text-subtle: #475569;
+  --text-heading: #0f172a;
+  --text-body: #1e293b;
+  --text-card-content: #0f172a;
+  --text-attr: #0f172a;
+
+  --body-bg-a: rgba(99, 102, 241, 0.12);
+  --body-bg-b: rgba(59, 130, 246, 0.10);
+}
+
+/* --------------------------------------------------------------------------
+   主題 3: emerald-dark (翡翠極光 - 明亮綠藍高對比)
+   -------------------------------------------------------------------------- */
+html[data-theme="emerald-dark"] {
+  --bg-dark-base: #021a1a;
+  --bg-dark-surface: #062626;
+  --bg-card-glass: rgba(6, 38, 38, 0.9);
+  --bg-glass-hover: rgba(12, 54, 54, 0.95);
+  --bg-panel-deep: #062626;
+  --bg-panel-medium: #093333;
+  --bg-panel-light: #052020;
+  --bg-card-solid: #093333;
+  --bg-input: #041d1d;
+  --bg-input-deep: #021414;
+  --bg-hero-banner: linear-gradient(135deg, #093333 0%, #041d1d 100%);
+  --bg-loading: #093333;
+  --bg-modal-backdrop: rgba(0, 15, 15, 0.85);
+  --bg-dropzone: #041d1d;
+  --bg-dropzone-hover: rgba(16, 185, 129, 0.15);
+  --bg-btn-ghost: rgba(16, 185, 129, 0.15);
+  --bg-kpi-latest: #041d1d;
+
+  --border-glass: #134e4a;
+  --border-glass-glow: #10b981;
+  --border-card: #134e4a;
+  --border-card-light: #0d9488;
+  --border-card-medium: #14b8a6;
+  --border-card-strong: #2dd4bf;
+
+  --primary-color: #10b981;
+  --primary-light: #34d399;
+  --primary-dark: #059669;
+  --gradient-accent: linear-gradient(135deg, #059669 0%, #10b981 50%, #06b6d4 100%);
+  --gradient-card: linear-gradient(145deg, #093333 0%, #041d1d 100%);
+
+  --shadow-glow: 0 0 25px rgba(16, 185, 129, 0.35);
+  --shadow-card: 0 10px 30px -5px rgba(0, 20, 20, 0.7);
+
+  --text-main: #f0fdf4;
+  --text-muted: #6ee7b7;
+  --text-subtle: #34d399;
+  --text-heading: #ffffff;
+  --text-body: #a7f3d0;
+  --text-card-content: #ecfdf5;
+  --text-attr: #a7f3d0;
+
+  --body-bg-a: rgba(16, 185, 129, 0.2);
+  --body-bg-b: rgba(6, 182, 212, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   主題 4: amber-glow (琥珀香檳 - 暖金亮麗高質感)
+   -------------------------------------------------------------------------- */
+html[data-theme="amber-glow"] {
+  --bg-dark-base: #1c130b;
+  --bg-dark-surface: #2a1d10;
+  --bg-card-glass: rgba(42, 29, 16, 0.9);
+  --bg-glass-hover: rgba(58, 40, 22, 0.95);
+  --bg-panel-deep: #2a1d10;
+  --bg-panel-medium: #362514;
+  --bg-panel-light: #22170d;
+  --bg-card-solid: #362514;
+  --bg-input: #22170d;
+  --bg-input-deep: #170f08;
+  --bg-hero-banner: linear-gradient(135deg, #362514 0%, #170f08 100%);
+  --bg-loading: #362514;
+  --bg-modal-backdrop: rgba(15, 8, 3, 0.85);
+  --bg-dropzone: #22170d;
+  --bg-dropzone-hover: rgba(245, 158, 11, 0.15);
+  --bg-btn-ghost: rgba(245, 158, 11, 0.15);
+  --bg-kpi-latest: #170f08;
+
+  --border-glass: #78350f;
+  --border-glass-glow: #f59e0b;
+  --border-card: #78350f;
+  --border-card-light: #b45309;
+  --border-card-medium: #d97706;
+  --border-card-strong: #f59e0b;
+
+  --primary-color: #f59e0b;
+  --primary-light: #fbbf24;
+  --primary-dark: #d97706;
+  --gradient-accent: linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #f97316 100%);
+  --gradient-card: linear-gradient(145deg, #362514 0%, #170f08 100%);
+
+  --shadow-glow: 0 0 25px rgba(245, 158, 11, 0.35);
+  --shadow-card: 0 10px 30px -5px rgba(20, 10, 0, 0.7);
+
+  --text-main: #fffbeb;
+  --text-muted: #fcd34d;
+  --text-subtle: #fbbf24;
+  --text-heading: #ffffff;
+  --text-body: #fde68a;
+  --text-card-content: #fffbeb;
+  --text-attr: #fde68a;
+
+  --body-bg-a: rgba(245, 158, 11, 0.2);
+  --body-bg-b: rgba(249, 115, 22, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   Body 背景 — 根據主題套用漸層
+   -------------------------------------------------------------------------- */
+html[data-theme] body {
+  background-color: var(--bg-dark-base);
+  background-image:
+    radial-gradient(circle at 15% 15%, var(--body-bg-a) 0%, transparent 45%),
+    radial-gradient(circle at 85% 85%, var(--body-bg-b) 0%, transparent 45%);
+  background-attachment: fixed;
+  color: var(--text-main);
+}
+
+/* --------------------------------------------------------------------------
+   Admin Panel — 側面板樣式與主題卡片
+   -------------------------------------------------------------------------- */
+#admin-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1998;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+#admin-panel-backdrop.active {
+  display: block;
+  opacity: 1;
+}
+
+#admin-panel {
+  position: fixed;
+  top: 0;
+  right: -360px;
+  width: 340px;
+  height: 100vh;
+  background: var(--bg-dark-surface);
+  border-left: 2px solid var(--border-glass-glow);
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.6);
+  z-index: 1999;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 24px;
+  gap: 24px;
+  transition: right 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  color: var(--text-main);
+}
+#admin-panel.active {
+  right: 0;
+}
+
+.admin-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-glass);
+  padding-bottom: 18px;
+}
+.admin-panel-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-panel-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 22px;
+  cursor: pointer;
+  transition: color 0.18s;
+}
+.admin-panel-close:hover {
+  color: var(--text-main);
+}
+
+.admin-section-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   主題選擇卡片
+   -------------------------------------------------------------------------- */
+.theme-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.theme-card {
+  border: 2px solid var(--border-glass);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  background: var(--bg-card-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.theme-card:hover {
+  border-color: var(--border-glass-glow);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+}
+.theme-card.active {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 16px var(--primary-color);
+}
+
+.theme-card-preview {
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  gap: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+.theme-preview-bar {
+  flex: 1;
+}
+
+.theme-card-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+}
+.theme-card-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* 齒輪按鈕 */
+.btn-admin-panel {
+  background: var(--bg-btn-ghost);
+  border: 1px solid var(--border-glass);
+  color: var(--text-main);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.btn-admin-panel:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-light);
+  color: #ffffff;
+  transform: rotate(30deg);
+}
+
+/* Admin Panel 系統資訊區塊 */
+.admin-info-block {
+  background: var(--bg-panel-medium);
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.admin-info-block b {
+  color: var(--text-main);
+}

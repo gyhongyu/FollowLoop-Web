@@ -1,0 +1,102 @@
+{
+  "name": "FollowLoop - 雙表 CRM 專案看板",
+  "short_name": "FollowLoop",
+  "description": "FollowLoop 閉環工程 AI 助理 - 雙表 CRM 專案看板與情報追蹤系統",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0B0F19",
+  "theme_color": "#0B0F19",
+  "orientation": "any",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "img/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "img/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live View 看板",
+      "short_name": "看板",
+      "description": "查看即時專案看板與動態時間軸",
+      "url": "./index.html#live-view",
+      "icons": [{ "src": "img/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "直傳門閥 Ingestion",
+      "short_name": "直傳",
+      "description": "上傳報告或影音多模態檔案",
+      "url": "./index.html#ingestion-gate",
+      "icons": [{ "src": "img/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "HITL 審核中心",
+      "short_name": "審核",
+      "description": "審核 AI 提煉情報與流水帳",
+      "url": "./index.html#hitl-reviewer",
+      "icons": [{ "src": "img/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "media",
+          "accept": [
+            "audio/*",
+            "image/*",
+            "video/*",
+            "application/*",
+            "text/*",
+            ".amr",
+            ".m4a",
+            ".mp3",
+            ".wav",
+            ".ogg",
+            ".aac",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+            ".pdf",
+            ".docx",
+            ".xlsx",
+            ".xls",
+            ".pptx",
+            ".txt",
+            ".csv",
+            ".zip"
+          ]
+        }
+      ]
+    }
+  }
+}
