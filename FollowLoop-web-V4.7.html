@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>FollowLoop - 雙表 CRM 專案看板 (V4.8 物理場景直傳與打工仔加固版)</title>
-  <meta name="description" content="FollowLoop 閉環工程 AI 助理 - V4.8 支援 8大物理場景直傳、OpenRouter 多模態打工仔大模型、後台自動巡檢與防幻覺門閥、二階段直傳與雙表 CRM 看板">
+  <title>FollowLoop - 雙表 CRM 專案看板 (V4.6 多模態打工仔版)</title>
+  <meta name="description" content="FollowLoop 閉環工程 AI 助理 - V4.6 支援 OpenRouter 多模態打工仔大模型、前端 OCR 與語音提煉、大檔二階段直傳與雙表 CRM 看板">
 
   <!-- PWA & Mobile Web App Meta Tags -->
   <meta name="theme-color" content="#0B0F19">
@@ -101,7 +101,7 @@
         <img src="img/wlogo_foxlink_s.png" id="brand-logo-img" alt="FOXLINK Logo" style="height: 32px; width: auto; margin-right: 14px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
         <div>
           <h1 class="brand-title" style="margin: 0; font-size: 1.25rem;">FollowLoop Web Gate</h1>
-          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V4.8-SceneRouter</span>
+          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V4.6-Multimodal</span>
         </div>
       </div>
 
@@ -783,13 +783,12 @@
 
     <div class="admin-info-block">
       <b>FollowLoop Web Gate</b><br>
-      版本：<b>V4.8-SceneRouter</b><br>
+      版本：<b>V4.6-Multimodal</b><br>
       主題偏好：本地儲存 (per-user localStorage)<br>
       AI 智腦：打工仔中央總帳 (Google Sheet SSOT)<br>
       多模態分流：Text / Vision / Audio / Video<br>
-      後台巡檢：靜默自動巡檢 ✕ 防幻覺置信度門閥<br>
       數據源：Projects_Master + Memory_Pool_Raw (GAS v5.0)<br>
-      快取模式：PWA Network-First + API Bypass (v4.8.0)<br>
+      快取模式：PWA Network-First + API Bypass<br>
       <br>
       <span style="font-size: 0.75rem; color: var(--text-subtle);">所有設定僅存儲於本機，不上傳至雲端。</span>
     </div>
@@ -804,17 +803,17 @@
   </script>
 
   <!-- Application Scripts -->
-  <script src="js/config.js?v=4.8.0"></script>
-  <script src="js/openrouter-worker.js?v=4.8.0"></script>
-  <script src="js/openrouter_extractor.js?v=4.8.0"></script>
-  <script src="js/admin_panel.js?v=4.8.0"></script>
-  <script src="js/drive_uploader.js?v=4.8.0"></script>
-  <script src="js/hitl_reviewer.js?v=4.8.0"></script>
-  <script src="js/live_view.js?v=4.8.0"></script>
-  <script src="js/project_manager.js?v=4.8.0"></script>
-  <script src="js/auth.js?v=4.8.0"></script>
-  <script src="js/app.js?v=4.8.0"></script>
-  <script src="js/background-pipeline.js?v=4.8.0"></script>
+  <script src="js/config.js?v=4.7.7"></script>
+  <script src="js/openrouter-worker.js?v=4.7.7"></script>
+  <script src="js/openrouter_extractor.js?v=4.7.7"></script>
+  <script src="js/admin_panel.js?v=4.7.7"></script>
+  <script src="js/drive_uploader.js?v=4.7.7"></script>
+  <script src="js/hitl_reviewer.js?v=4.7.7"></script>
+  <script src="js/live_view.js?v=4.7.7"></script>
+  <script src="js/project_manager.js?v=4.7.7"></script>
+  <script src="js/auth.js?v=4.7.7"></script>
+  <script src="js/app.js?v=4.7.7"></script>
+  <script src="js/background-pipeline.js?v=4.7.7"></script>
 
   <!-- PWA Service Worker 安全註冊與即時熱更新機制 -->
   <script>

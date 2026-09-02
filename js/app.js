@@ -459,13 +459,13 @@ function initIngestionModule() {
       e.preventDefault();
       dropzone.classList.remove("dragover");
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        handleFileUpload(e.dataTransfer.files[0]);
+        handleFilesBatch(Array.from(e.dataTransfer.files));
       }
     });
 
     fileInput.addEventListener("change", () => {
       if (fileInput.files && fileInput.files.length > 0) {
-        handleFileUpload(fileInput.files[0]);
+        handleFilesBatch(Array.from(fileInput.files));
       }
     });
   }
@@ -486,17 +486,72 @@ function initIngestionModule() {
         }
       } else {
         try {
-          showToast("停止錄音，準備呼叫打工仔進行多模態語音提煉...", "info");
           micBtn.classList.remove("recording");
           timerText.textContent = "00:00";
           const audioFile = await driveUploader.stopRecording();
-          await handleFileUpload(audioFile);
+          
+          // 🌟 彈出 4 選 1 語音分流選單 (0 LLM 瞎猜)
+          const modalBackdrop = document.getElementById("audio-category-modal-backdrop");
+          if (modalBackdrop) {
+            modalBackdrop.style.display = "flex";
+            window._pendingAudioFile = audioFile;
+          } else {
+            await handleFileUpload(audioFile);
+          }
         } catch (err) {
           showToast(err.message, "danger");
         }
       }
     });
   }
+
+  // 🎙️ 綁定語音 4 選 1 分流彈窗按鈕事件
+  const audioCloseBtn = document.getElementById("audio-cat-close-btn");
+  if (audioCloseBtn) {
+    audioCloseBtn.addEventListener("click", () => {
+      const modalBackdrop = document.getElementById("audio-category-modal-backdrop");
+      if (modalBackdrop) modalBackdrop.style.display = "none";
+      window._pendingAudioFile = null;
+    });
+  }
+
+  document.querySelectorAll(".audio-cat-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const catKey = btn.getAttribute("data-cat") || "raw";
+      const modalBackdrop = document.getElementById("audio-category-modal-backdrop");
+      if (modalBackdrop) modalBackdrop.style.display = "none";
+
+      const file = window._pendingAudioFile;
+      window._pendingAudioFile = null;
+      if (!file) return;
+
+      const subfolderMap = {
+        meeting: "VoiceMemos/Meeting",
+        call: "VoiceMemos/Call",
+        memo: "VoiceMemos/Memo",
+        raw: "VoiceMemos"
+      };
+      const catLabelMap = {
+        meeting: "會議錄音",
+        call: "通話記錄",
+        memo: "個人速記",
+        raw: "待轉寫語音"
+      };
+
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+      const hms = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const ext = file.name.split('.').pop() || "m4a";
+      const customName = `audio_${catKey}_${ymd}_${hms}.${ext}`;
+      
+      const renamedFile = new File([file], customName, { type: file.type });
+      renamedFile.transcript = file.transcript || "";
+
+      showToast(`🎙️ 正在分流至 ${catLabelMap[catKey] || '語音箱'} (0 LLM 直傳)...`, "info");
+      await executeDirectCategorizedUpload(renamedFile, `[語音/${catLabelMap[catKey]}]`, "VOICE_MEMOS");
+    });
+  });
 
   if (submitNoteBtn && noteTextarea) {
     submitNoteBtn.addEventListener("click", async () => {
@@ -588,245 +643,286 @@ function initIngestionModule() {
     });
   }
 
-  async function handleFileUpload(file) {
-    if (!file) return;
-
-    const userNotes = noteTextarea ? noteTextarea.value : "";
-    const projectList = getAvailableProjectsList();
-    const isImage = file.type.startsWith("image/");
-    const isAudio = file.type.startsWith("audio/") || file.name.match(/\.(mp3|m4a|wav|aac|ogg|webm)$/i);
-    const isPdf = file.type === "application/pdf" || file.name.match(/\.pdf$/i);
-    const isDocText = file.type.startsWith("text/") || file.name.match(/\.(txt|md|json|csv|log)$/i);
-    const isDocument = isPdf || isDocText || file.name.match(/\.(docx|pptx|xlsx)$/i);
-    const maxWorkerSize = CONFIG.MULTIMODAL_MAX_FILE_SIZE || (25 * 1024 * 1024);
-
-    // 🌟 第一道防線：若為圖片、音訊或文檔 (PDF/TXT等 <= 25MB)，優先由打工仔大模型進行多模態/文本提煉
-    if ((isImage || isAudio || isDocument) && file.size <= maxWorkerSize) {
-      progressContainer.classList.add("active");
-      progressBarFill.style.width = "20%";
-      progressText.textContent = `⚡ 正在讀取與預處理: ${file.name}...`;
-      
-      const taskType = isImage ? "圖片 OCR" : isAudio ? "語音理解" : "商務文檔解析";
-      window.FL_AI_LOGGER.startTask(`${taskType} (${file.name})`, `${(file.size / 1024).toFixed(1)} KB`);
-
-      try {
-        let extracted = null;
-
-        if (isImage) {
-          window.FL_AI_LOGGER.log("轉譯圖片", "FileReader 轉 Data URL");
-          const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          progressBarFill.style.width = "50%";
-          progressText.textContent = `⚡ 正在調用打工仔 Vision 模型解析圖片...`;
-          window.FL_AI_LOGGER.log("呼叫 Vision 模型", "請求 200B/31B 多模態視覺隊列");
-          extracted = await window.openRouterExtractor.extractVision(dataUrl, userNotes, projectList);
-        } else if (isAudio) {
-          window.FL_AI_LOGGER.log("轉譯音訊", "提取語音逐字稿與二進位流");
-          const transcriptText = file.transcript || "";
-          
-          if (transcriptText.trim()) {
-            progressBarFill.style.width = "50%";
-            progressText.textContent = `⚡ 正在調用打工仔旗艦模型校正並提煉語音情報...`;
-            window.FL_AI_LOGGER.log("呼叫旗艦大模型", `發送語音逐字稿 (${transcriptText.length} 字) 結合專案主檔字典`);
-            
-            const combinedAudioNote = `【語音錄音逐字稿 (Web Speech)】:\n${transcriptText}\n\n【使用者附加備註】:\n${userNotes || "無"}`;
-            extracted = await window.openRouterExtractor.extractDocument(combinedAudioNote, file.name, userNotes, projectList);
-          } else {
-            // 若無逐字稿（如使用者直接拖入純音訊檔案），嘗試調用 Audio 多模態，若失敗自動降級
-            window.FL_AI_LOGGER.log("音訊多模態", "嘗試二進位 Base64 提煉");
-            const base64Data = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result.split(",")[1]);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            });
-            try {
-              extracted = await window.openRouterExtractor.extractAudio(base64Data, file.type || "audio/webm", userNotes, projectList);
-            } catch (audioErr) {
-              console.warn("[AudioExtractor] 雲端 Audio 端點受限，回退為音訊檔案備忘: ", audioErr.message);
-              const fallbackAudioText = `[語音檔案備忘]: ${file.name} (大小: ${(file.size / 1024).toFixed(1)} KB)\n備註: ${userNotes || "語音訊息存檔"}`;
-              extracted = await window.openRouterExtractor.extractDocument(fallbackAudioText, file.name, userNotes, projectList);
-            }
-          }
-        } else if (isDocument) {
-          window.FL_AI_LOGGER.log("解析文檔", "提取文字串流中");
-          progressBarFill.style.width = "40%";
-          progressText.textContent = `⚡ 正在讀取文檔內文: ${file.name}...`;
-          
-          let docText = "";
-          if (isDocText) {
-            docText = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result);
-              reader.onerror = reject;
-              reader.readAsText(file, "utf-8");
-            });
-          } else if (isPdf && window.pdfjsLib) {
-            // 🌟 採用 PDF.js 進行真實 PDF 內文純文字抽取 (支援 zlib/Flate 解壓縮)
-            try {
-              const arrayBuffer = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsArrayBuffer(file);
-              });
-              const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-              const maxPages = Math.min(pdf.numPages, 10); // 萃取前 10 頁核心情報
-              const textPieces = [];
-              for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-                const page = await pdf.getPage(pageNum);
-                const content = await page.getTextContent();
-                const pageText = content.items.map(item => item.str).join(" ");
-                if (pageText.trim()) textPieces.push(`--- [第 ${pageNum} 頁] ---\n${pageText}`);
-              }
-              docText = textPieces.join("\n\n");
-            } catch (pdfErr) {
-              console.warn("[PDF.js] 解析異常，回退至基礎提取: ", pdfErr.message);
-            }
-          }
-
-          // 基礎備援
-          if (!docText || docText.length < 30) {
-            docText = `[檔案名稱]: ${file.name} (大小: ${(file.size / 1024).toFixed(1)} KB)\n備註: ${userNotes}`;
-          }
-
-          // 🛡️ Token 防爆門檻：截取核心前 12,000 字元 (避免塞爆免費打工仔模型 Context)
-          if (docText.length > 12000) {
-            docText = docText.slice(0, 12000) + "\n...[文檔長度超過限制，已自動截取前 12,000 字元核心段落]...";
-          }
-
-          progressBarFill.style.width = "60%";
-          progressText.textContent = `⚡ 正在調用打工仔旗艦模型提煉文檔情報...`;
-          window.FL_AI_LOGGER.log("呼叫 LLM 模型", `發送 ${docText.length} 字元至大模型`);
-          
-          if (!window.openRouterExtractor && typeof OpenRouterExtractor !== "undefined") {
-            window.openRouterExtractor = new OpenRouterExtractor();
-          }
-          if (!window.openRouterExtractor) {
-            throw new Error("openRouterExtractor 模組尚未就緒，請重新整理頁面。");
-          }
-
-          extracted = await window.openRouterExtractor.extractDocument(docText, file.name, userNotes, projectList);
-        }
-
-        progressBarFill.style.width = "85%";
-        progressText.textContent = `提煉成功，正在寫入雲端待審核資料庫...`;
-        window.FL_AI_LOGGER.log("寫入雲端", "持久化至 Memory_Pool_Raw");
-
-        const now = new Date();
-        const pad = (n) => String(n).padStart(2, "0");
-        const cleanTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-        const randSuffix = (Math.random().toString(36) + "0000").slice(2, 6);
-        const prefix = isImage ? "LOG_IMG" : isAudio ? "LOG_AUD" : "LOG_DOC";
-        const logId = `${prefix}_${Date.now()}_${randSuffix}`;
-
-        // ☁️ 背景直傳 Google Drive 並獲取真實分享鏈結
-        window.FL_AI_LOGGER.log("雲端硬碟備份", "正在直傳 Google Drive 建立永久分享鏈結");
-        let driveRes = null;
-        try {
-          driveRes = await driveUploader.uploadFileDirect(file, userNotes);
-        } catch (e) {
-          console.warn("[Ingestion] 實體檔案 Drive 直傳提示: ", e.message);
-        }
-
-        const driveViewUrl = driveRes && driveRes.file_id ? `https://drive.google.com/file/d/${driveRes.file_id}/view?usp=sharing` : (driveRes ? driveRes.raw_url : "");
-        const attachmentPayload = driveViewUrl ? JSON.stringify([{ title: file.name, url: driveViewUrl, category: "Google Drive" }]) : "";
-
-        const rawRow = [
-          logId,
-          cleanTimestamp,
-          extracted.project_tag || "NEW_UNCLASSIFIED",
-          extracted.entity_target || "未指定客戶 (待編輯)",
-          extracted.target_purpose || "",
-          "",
-          extracted.action_taken || (isImage ? "圖片動態" : isAudio ? "語音紀錄" : "文檔整改/評估動態"),
-          extracted.update_log || `[${file.name}] 解析完成`,
-          attachmentPayload,
-          String(extracted.confidence_score || 0.9),
-          "PENDING_REVIEW"
-        ];
-
-        // 寫入雲端 Memory_Pool_Raw
-        await sendGasRequest("batch_append_raw", {
-          sheet: "Memory_Pool_Raw",
-          rows: [rawRow]
-        });
-
-        // 注入 HITL 卡片 (包含已就緒之 Google Drive 附件鏈結)
-        const modelLabel = extracted.params_b ? `${extracted.model_used} (${extracted.params_b}B)` : (extracted.model_used || "OpenRouter");
-        const sourceIcon = isImage ? "🖼️ 圖片/截圖 OCR" : isAudio ? "🎙️ 語音多模態" : "📄 商務文檔解析";
-        const newCard = {
-          entry_id: logId,
-          log_id: logId,
-          timestamp: cleanTimestamp,
-          source_type: `${sourceIcon} (${modelLabel})`,
-          project_tag: extracted.project_tag || "NEW_UNCLASSIFIED",
-          entity_target: extracted.entity_target || "未指定客戶 (待編輯)",
-          target_purpose: extracted.target_purpose || "",
-          action_taken: extracted.action_taken || (isImage ? "圖片動態" : isAudio ? "語音紀錄" : "文檔整改/評估動態"),
-          update_log: extracted.update_log || `[${file.name}] 解析紀錄`,
-          raw_text: `[檔案: ${file.name} / ${(file.size / 1024).toFixed(1)} KB] ${userNotes}`,
-          attachment_links: attachmentPayload,
-          confidence_score: String(extracted.confidence_score || 0.9),
-          status: "PENDING_REVIEW"
-        };
-
-        if (window.hitlReviewer) {
-          window.hitlReviewer.pendingCards.unshift(newCard);
-          window.hitlReviewer.notify();
-        }
-
-        const badgeEl = document.getElementById("hitl-badge-count");
-        if (badgeEl && window.hitlReviewer) {
-          badgeEl.textContent = window.hitlReviewer.pendingCards.length;
-        }
-
-        progressBarFill.style.width = "100%";
-        progressText.textContent = `✅ 解析完成！已生成待審核卡片 (含 Google Drive 附件鏈結)`;
-        window.FL_AI_LOGGER.completeTask(`完成提煉，生成待審核卡片 (模型: ${modelLabel})`);
-        showToast(`🎉 檔案 ${file.name} 解析提煉成功！(模型: ${modelLabel})`, "success");
-
-        if (noteTextarea) noteTextarea.value = "";
+  /**
+   * 🖼️ 前端 Canvas 即時無損感知壓縮（僅供打工仔 Vision 初篩，原圖 100% 原始畫質直傳 Drive）
+   * @param {File} file 
+   * @param {number} maxSide - 最長邊上限 (預設 800px)
+   * @param {number} quality - JPEG 壓縮品質 (預設 0.6)
+   * @returns {Promise<string>} 壓縮後極小的 Base64 Data URL (~100KB)
+   */
+  async function compressImageForLLM(file, maxSide = 800, quality = 0.6) {
+    return new Promise((resolve) => {
+      // 門檻：若小於 400KB 則不浪費 Canvas 運算
+      if (file.size <= 400 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
         return;
-      } catch (err) {
-        console.warn(`[Ingestion] 多模態/文檔前端解析異常 (${err.message})，切換為二階段直傳 Google Drive...`);
-        window.FL_AI_LOGGER.failTask(`多模態提煉異常 (${err.message})，自動降級為 Google Drive 直傳`);
-        showToast(`解析遇到異常: ${err.message}，轉入 Google Drive 直傳...`, "warning");
       }
-    }
 
-    // 🌊 第二道防線：超大檔案 (>25MB)、影片或降級檔案，走 Google Drive Resumable 直傳
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+
+        // 計算等比縮放
+        if (w > maxSide || h > maxSide) {
+          if (w > h) {
+            h = Math.round((h * maxSide) / w);
+            w = maxSide;
+          } else {
+            w = Math.round((w * maxSide) / h);
+            h = maxSide;
+          }
+        }
+
+        // 防禦：防止長截圖最短邊過小
+        w = Math.max(w, 200);
+        h = Math.max(h, 200);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        // 白色底色避免透明 PNG 轉黑
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      };
+      img.src = url;
+    });
+  }
+
+  /**
+   * ⚡ 執行純代碼 / 0 LLM 素材分類直傳 Google Drive
+   * @param {File} file 
+   * @param {string} userNotes 
+   * @param {string} categoryKey - VOUCHERS / VOICE_MEMOS / BUSINESS_CARDS / PROJECT_DOCS / UNCLASSIFIED 等
+   */
+  async function executeDirectCategorizedUpload(file, userNotes = "", categoryKey = "UNCLASSIFIED") {
     progressContainer.classList.add("active");
     progressBarFill.style.width = "0%";
-    progressText.textContent = `準備直傳 Google Drive: ${file.name}... (0%)`;
-    window.FL_AI_LOGGER.startTask(`Google Drive 二階段直傳 (${file.name})`);
+    progressBarFill.style.background = "var(--color-primary)";
+    const catConfig = CONFIG.RAW_SCENE_CATEGORIES[categoryKey] || CONFIG.RAW_SCENE_CATEGORIES.UNCLASSIFIED;
+    progressText.textContent = `⚡ 正在直傳至 ${catConfig.icon} ${catConfig.folder}: ${file.name}... (0%)`;
+    window.FL_AI_LOGGER.startTask(`素材分流直傳 [${catConfig.folder}]`, `${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
 
     try {
-      showToast(`開始 Google Drive 二階段直傳: ${file.name}`, "info");
-      await driveUploader.uploadFileDirect(file, userNotes, (percent) => {
+      const driveRes = await driveUploader.uploadFileDirect(file, userNotes, (percent) => {
         progressBarFill.style.width = `${percent}%`;
-        progressText.textContent = `直傳 Google Drive 中: ${percent}%`;
+        progressText.textContent = `直傳 ${catConfig.folder} 中: ${percent}%`;
         window.FL_AI_LOGGER.log("直傳進度", `${percent}%`);
-      });
+      }, null, categoryKey);
 
       progressBarFill.style.width = "100%";
-      progressText.textContent = "✅ 直傳完成！已安全存入 Google Drive";
-      window.FL_AI_LOGGER.completeTask(`檔案直傳 Google Drive 成功`);
-      showToast(`🎉 檔案 ${file.name} 直傳 Google Drive 成功！`, "success");
+      progressText.textContent = `✅ 直傳完成！已安全存入 ${catConfig.folder}/`;
+      window.FL_AI_LOGGER.completeTask(`素材已歸入 ${catConfig.folder}/，等待本機 AI 治理`);
+      showToast(`🎉 檔案 ${file.name} 已安全存入 ${catConfig.icon} ${catConfig.folder}/！`, "success");
       
       if (noteTextarea) noteTextarea.value = "";
     } catch (err) {
       progressBarFill.style.width = "100%";
       progressBarFill.style.background = "#ef4444";
       progressText.textContent = `❌ 上傳失敗: ${err.message}`;
-      window.FL_AI_LOGGER.failTask(`Google Drive 上傳失敗: ${err.message}`);
+      window.FL_AI_LOGGER.failTask(`分流直傳失敗: ${err.message}`);
       showToast(`上傳失敗: ${err.message}`, "danger");
+    } finally {
+      setTimeout(() => {
+        progressContainer.classList.remove("active");
+      }, 3500);
     }
   }
+
+  /**
+   * ⚡ 彈出快捷素材分類與人類覆寫確認彈窗 (1 點即傳 Click-and-Go，零 LLM 耗損)
+   */
+  function promptQuickCategoryModal(fileOrFiles, defaultCategory = "UNCLASSIFIED", summaryText = "", userNotes = "") {
+    return new Promise((resolve) => {
+      const modalBackdrop = document.getElementById("quick-category-modal-backdrop");
+      const previewInfo = document.getElementById("quick-cat-preview-info");
+      const timerLabel = document.getElementById("quick-cat-timer-label");
+      const confirmBtn = document.getElementById("quick-cat-confirm-btn");
+      const cancelBtn = document.getElementById("quick-cat-cancel-btn");
+      const closeBtn = document.getElementById("quick-cat-close-btn");
+
+      const isBatch = Array.isArray(fileOrFiles);
+      let selectedCat = defaultCategory;
+
+      if (previewInfo) {
+        if (isBatch) {
+          const totalSizeKb = fileOrFiles.reduce((acc, f) => acc + f.size, 0) / 1024;
+          const namesList = fileOrFiles.map(f => f.name).slice(0, 3).join(", ") + (fileOrFiles.length > 3 ? ` 等 ${fileOrFiles.length} 檔` : '');
+          previewInfo.innerHTML = `
+            <div style="font-weight:700; color:var(--text-heading); margin-bottom:4px;">📁 批次素材：${fileOrFiles.length} 個檔案 (${totalSizeKb.toFixed(1)} KB)</div>
+            <div style="font-size:0.8rem; color:var(--text-muted); word-break:break-all;">清單：<span style="color:#818cf8;">${namesList}</span></div>
+            <div style="font-size:0.75rem; color:var(--text-subtle); margin-top:4px;">請指定統一目標箱（點擊選項立刻發起直傳）：</div>
+          `;
+        } else {
+          const file = fileOrFiles;
+          const catConfig = CONFIG.RAW_SCENE_CATEGORIES[selectedCat] || CONFIG.RAW_SCENE_CATEGORIES.UNCLASSIFIED;
+          previewInfo.innerHTML = `
+            <div style="font-weight:700; color:var(--text-heading); margin-bottom:4px;">📄 檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">${summaryText ? `提示：<b style="color:#818cf8;">${summaryText}</b>` : '請點選目標箱直接上傳：'}</div>
+            <div style="font-size:0.75rem; color:var(--text-subtle); margin-top:2px;">目標門閥：<b>FollowLoop_RawInputs/</b></div>
+          `;
+        }
+      }
+
+      const cleanup = () => {
+        if (modalBackdrop) modalBackdrop.style.display = "none";
+      };
+
+      const doConfirm = (cat) => {
+        cleanup();
+        resolve(cat || selectedCat);
+      };
+
+      const doCancel = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      // 🌟 人性化一鍵直選：點擊任何分類選項，立刻確認並發起直傳 (Click & Go)
+      document.querySelectorAll(".quick-cat-option").forEach(b => {
+        b.onclick = () => {
+          const cat = b.getAttribute("data-key");
+          doConfirm(cat);
+        };
+      });
+
+      if (confirmBtn) confirmBtn.onclick = () => doConfirm(selectedCat);
+      if (cancelBtn) cancelBtn.onclick = doCancel;
+      if (closeBtn) closeBtn.onclick = doCancel;
+
+      if (timerLabel) timerLabel.textContent = "請點選目標箱直接上傳 (1 點即發)：";
+      if (modalBackdrop) modalBackdrop.style.display = "flex";
+    });
+  }
+
+  async function handleFileUpload(file) {
+    if (!file) return;
+
+    const userNotes = noteTextarea ? noteTextarea.value : "";
+    const isAudio = file.type.startsWith("audio/") || file.name.match(/\.(mp3|m4a|wav|aac|ogg|webm|amr)$/i);
+
+    // 🌟 1. 語音音訊 ➔ 彈出 4 選 1 語音菜單
+    if (isAudio) {
+      const modalBackdrop = document.getElementById("audio-category-modal-backdrop");
+      if (modalBackdrop) {
+        modalBackdrop.style.display = "flex";
+        window._pendingAudioFile = file;
+        return;
+      }
+    }
+
+    // 🌟 2. 智慧預判預設分類（純副檔名/特徵偵測，0 LLM 消耗）
+    let defaultCat = "UNCLASSIFIED";
+    let summaryHint = "";
+    const isImage = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf" || file.name.match(/\.pdf$/i);
+    const isDocText = file.type.startsWith("text/") || file.name.match(/\.(txt|md|json|csv|log|ini|conf)$/i);
+    const isDocument = isPdf || isDocText || file.name.match(/\.(docx|doc|pptx|ppt|xlsx|xls|cad|dwg|zip|rar|7z)$/i);
+
+    if (isDocument) {
+      const isLikelyVoucher = file.name.match(/(invoice|receipt|bill|voucher|ticket|flight|hotel|發票|收據|單據|報銷|水單|車票|機票)/i);
+      defaultCat = isLikelyVoucher ? "VOUCHERS" : "PROJECT_DOCS";
+      summaryHint = isLikelyVoucher ? "偵測為報銷單據/發票文檔" : "偵測為專案/技術文檔";
+    } else if (isImage) {
+      const isCardName = file.name.match(/(card|namecard|businesscard|名片)/i);
+      const isVoucherName = file.name.match(/(invoice|receipt|bill|voucher|ticket|發票|收據|單據|報銷)/i);
+      const isChatName = file.name.match(/(chat|wechat|whatsapp|webex|screen|對話|截圖)/i);
+      if (isCardName) {
+        defaultCat = "BUSINESS_CARDS";
+        summaryHint = "檔名特徵包含名片";
+      } else if (isVoucherName) {
+        defaultCat = "VOUCHERS";
+        summaryHint = "檔名特徵包含報銷/發票";
+      } else if (isChatName) {
+        defaultCat = "CHAT_SCREENSHOTS";
+        summaryHint = "檔名特徵包含對話截圖";
+      }
+    }
+
+    // 🌟 3. 彈出分類確認選單（1 點即發，確保 100% 絕對真理分流）
+    const chosenCat = await promptQuickCategoryModal(file, defaultCat, summaryHint, userNotes);
+    if (!chosenCat) {
+      showToast("已取消上傳", "info");
+      return;
+    }
+
+    await executeDirectCategorizedUpload(file, userNotes, chosenCat);
+  }
+
+  /**
+   * 🌟 批次素材分流處理器 (支援名片正反面成對關聯與多檔案批次 1 點入箱)
+   * @param {Array<File>} files 
+   */
+  async function handleFilesBatch(files) {
+    if (!files || files.length === 0) return;
+
+    // 1. 若只有 1 個檔案，直接走單檔處理流程
+    if (files.length === 1) {
+      await handleFileUpload(files[0]);
+      return;
+    }
+
+    const userNotes = noteTextarea ? noteTextarea.value : "";
+    const allImages = files.every(f => f.type.startsWith("image/"));
+
+    // 2. 🌟 批次上傳彈窗：一次指定整批檔案的目標箱 (0 LLM 消耗，1 點即傳)
+    let defaultCat = "UNCLASSIFIED";
+    if (allImages && files.length === 2) {
+      defaultCat = "BUSINESS_CARDS";
+    }
+
+    const chosenCat = await promptQuickCategoryModal(files, defaultCat, `已選取 ${files.length} 個檔案`, userNotes);
+    if (!chosenCat) {
+      showToast("已取消批次上傳", "info");
+      return;
+    }
+
+    // 🪪 若使用者選擇名片且剛好為 2 張圖 ➔ 自動進行成對 front/back 命名關聯
+    if (chosenCat === "BUSINESS_CARDS" && files.length === 2 && allImages) {
+      showToast(`🪪 偵測到 2 張名片圖片，正在成對關聯上傳至 BusinessCards/ 箱...`, "info");
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const ext = f.name.split('.').pop() || "jpg";
+        const sideLabel = i === 0 ? "front" : "back";
+        const pairedName = `card_${ymd}_${sideLabel}.${ext}`;
+        const renamedFile = new File([f], pairedName, { type: f.type });
+
+        await executeDirectCategorizedUpload(renamedFile, `[成對名片/${sideLabel}] ${userNotes}`, "BUSINESS_CARDS");
+      }
+      return;
+    }
+
+    // 3. 其餘批次檔案：依選定的目標箱全量直傳
+    showToast(`⚡ 開始將 ${files.length} 個檔案直傳至 ${chosenCat} 箱...`, "info");
+    for (let i = 0; i < files.length; i++) {
+      await executeDirectCategorizedUpload(files[i], userNotes, chosenCat);
+    }
+  }
+
+  // 🌐 全域安全掛載 handleFileUpload 與 handleFilesBatch
+  window.handleFileUpload = handleFileUpload;
+  window.handleFilesBatch = handleFilesBatch;
 }
 
 
@@ -2267,6 +2363,21 @@ async function handleIncomingSharedFiles() {
 
   for (let i = 0; i < sharedItems.length; i++) {
     const item = sharedItems[i];
+
+    // 🌟 若為純網址分享 ➔ 0 LLM 直接建立 .url 捷徑存入 Links/ 箱
+    const incomingUrl = item.url || (item.text && item.text.match(/^https?:\/\/[^\s]+$/) ? item.text.trim() : null);
+    if (incomingUrl && !item.blob) {
+      try {
+        showToast(`🌐 偵測到網址分享，正在儲存至 Links 箱: ${incomingUrl}`, 'info');
+        await driveUploader.uploadUrlShortcut(incomingUrl, item.title || item.text || '');
+        showToast(`🎉 網址捷徑已安全存入 Links/ 資料夾！`, 'success');
+      } catch (urlErr) {
+        console.error('[ShareTarget] 網址儲存失敗:', urlErr);
+        showToast(`❌ 網址存入失敗: ${urlErr.message}`, 'danger');
+      }
+      continue;
+    }
+
     const fileBlob = item.blob || item;
     // 重建標準 File 物件
     const file = new File([fileBlob], item.name || `shared_file_${Date.now()}`, {
@@ -2275,27 +2386,8 @@ async function handleIncomingSharedFiles() {
 
     const userNotes = item.text || item.title ? `[系統分享] ${item.title || ''} ${item.text || ''}`.trim() : `[系統分享] 來自 Android 系統分享之檔案`;
 
-    if (progressContainer) {
-      progressContainer.classList.add("active");
-      if (progressBarFill) progressBarFill.style.width = "0%";
-      if (progressText) progressText.textContent = `[${i + 1}/${sharedItems.length}] 正在直傳: ${file.name}... (0%)`;
-    }
-
-    try {
-      showToast(`⚡ 正在直傳 [${i + 1}/${sharedItems.length}]: ${file.name}`, 'info');
-      await driveUploader.uploadFileDirect(file, userNotes, (percent) => {
-        if (progressBarFill) progressBarFill.style.width = `${percent}%`;
-        if (progressText) progressText.textContent = `[${i + 1}/${sharedItems.length}] 直傳 Google Drive 中: ${percent}%`;
-      });
-
-      if (progressBarFill) progressBarFill.style.width = "100%";
-      if (progressText) progressText.textContent = `[${i + 1}/${sharedItems.length}] 直傳完成！等候本機 AI 智腦解析`;
-      showToast(`🎉 檔案 ${file.name} 直傳 Google Drive 成功！`, 'success');
-    } catch (err) {
-      console.error(`[ShareTarget] 上傳 ${file.name} 失敗:`, err);
-      showToast(`❌ 檔案 ${file.name} 直傳失敗: ${err.message}`, 'danger');
-      if (progressText) progressText.textContent = `上傳失敗: ${file.name}`;
-    }
+    // 走智慧場景分流通道 (單檔/多檔自動調用分類彈窗)
+    await handleFileUpload(file);
   }
 
   // 清除 URL hash 中的 #share-incoming 標記

@@ -12,6 +12,77 @@ class DriveUploader {
     this.timerInterval = null;
     this.recognition = null;
     this.recordedTranscript = "";
+    this.subfolderCache = {}; // 快取各子資料夾 ID: { "Vouchers": "id_123" }
+  }
+
+  /**
+   * 根據 category 取得或自動建立 Google Drive 子資料夾 ID
+   * @param {string} token - Google OAuth Token
+   * @param {string} parentRawFolderId - FollowLoop_RawInputs 的 Folder ID
+   * @param {string} categoryKey - VOUCHERS / VOICE_MEMOS / BUSINESS_CARDS 等
+   */
+  async getSubfolderId(token, parentRawFolderId, categoryKey) {
+    if (!categoryKey || !CONFIG.RAW_SCENE_CATEGORIES) return parentRawFolderId;
+    const cat = CONFIG.RAW_SCENE_CATEGORIES[categoryKey] || 
+      Object.values(CONFIG.RAW_SCENE_CATEGORIES).find(c => c.folder.toLowerCase() === String(categoryKey).toLowerCase());
+    
+    if (!cat) return parentRawFolderId;
+    const folderName = cat.folder;
+
+    if (this.subfolderCache[folderName]) {
+      return this.subfolderCache[folderName];
+    }
+
+    // 嘗試從 localStorage 快取中讀取 (提升離線與極速體驗)
+    const storageKey = `fl_drive_folder_${folderName}`;
+    const cachedId = localStorage.getItem(storageKey);
+    if (cachedId) {
+      this.subfolderCache[folderName] = cachedId;
+      return cachedId;
+    }
+
+    try {
+      // 1. 查詢子資料夾是否存在
+      const q = encodeURIComponent(`name = '${folderName}' and '${parentRawFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (searchRes.ok) {
+        const data = await searchRes.json();
+        if (data.files && data.files.length > 0) {
+          const fid = data.files[0].id;
+          this.subfolderCache[folderName] = fid;
+          localStorage.setItem(storageKey, fid);
+          return fid;
+        }
+      }
+
+      // 2. 若不存在則在 parentRawFolderId 下自動建立
+      console.log(`[DriveUploader] 正在 Google Drive 建立子資料夾: ${folderName}...`);
+      const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json; charset=UTF-8"
+        },
+        body: JSON.stringify({
+          name: folderName,
+          mimeType: "application/vnd.google-apps.folder",
+          parents: [parentRawFolderId]
+        })
+      });
+      if (createRes.ok) {
+        const newFolder = await createRes.json();
+        const fid = newFolder.id;
+        this.subfolderCache[folderName] = fid;
+        localStorage.setItem(storageKey, fid);
+        return fid;
+      }
+    } catch (e) {
+      console.warn(`[DriveUploader] 查詢/建立子資料夾 (${folderName}) 失敗，退回根目錄:`, e);
+    }
+
+    return parentRawFolderId;
   }
 
   /**
@@ -19,21 +90,22 @@ class DriveUploader {
    * @param {File} file - 待上傳的檔案
    * @param {string} notes - 使用者補充備註
    * @param {Function} onProgress - 進度回呼 (percentage)
+   * @param {string} targetFolderId - 明確指定資料夾 ID
+   * @param {string} categoryKey - VOUCHERS / VOICE_MEMOS / BUSINESS_CARDS 等
    * @returns {Promise<Object>} 上傳結果資訊
    */
-  async uploadFileDirect(file, notes = "", onProgress = null, targetFolderId = null) {
+  async uploadFileDirect(file, notes = "", onProgress = null, targetFolderId = null, categoryKey = null) {
     if (!file) {
       throw new Error("請先選擇或錄製檔案！");
     }
 
-    const destFolderId = targetFolderId || CONFIG.DRIVE_ATTACHMENTS_FOLDER_ID;
-    console.log(`[DriveUploader] 步驟 1/2: 向 GAS 申請 Resumable Session URL (${file.name}, 目標資料夾 ID: ${destFolderId})`);
+    console.log(`[DriveUploader] 步驟 1/2: 向 GAS 申請 Resumable Session URL (${file.name}, 分類: ${categoryKey || '未指定'})`);
 
     let sessionUrl = null;
     let sessionRes = null;
 
     try {
-      // 1. 第一階段：向專用 Drive GAS 獲取授權 Token (零 UrlFetchApp 限制)
+      // 1. 第一階段：向專用 Drive GAS 獲取授權 Token
       const tokenRes = await sendDriveGasRequest("get_drive_token", {
         filename: file.name,
         mimeType: file.type || "application/octet-stream",
@@ -42,10 +114,17 @@ class DriveUploader {
       });
 
       if (tokenRes && tokenRes.status === "success" && tokenRes.token) {
-        const finalFolderId = destFolderId || tokenRes.folder_id;
-        console.log(`[DriveUploader] 成功取得 GAS OAuth Token，由前端瀏覽器向 Google Drive API 發起 Resumable Session (目標資料夾: ${finalFolderId})...`);
+        // 🌟 自動解析目標資料夾：優先使用 targetFolderId，否則依 categoryKey 自動路由子資料夾
+        let finalFolderId = targetFolderId;
+        if (!finalFolderId && categoryKey) {
+          finalFolderId = await this.getSubfolderId(tokenRes.token, tokenRes.folder_id, categoryKey);
+        }
+        if (!finalFolderId) {
+          finalFolderId = tokenRes.folder_id;
+        }
+
+        console.log(`[DriveUploader] 成功取得 GAS OAuth Token，發起 Resumable Session (目標資料夾: ${finalFolderId})...`);
         
-        // 前端瀏覽器直接對 Google Drive API v3 發起 Resumable Session 申請
         const metadata = {
           name: file.name,
           mimeType: file.type || "application/octet-stream",
@@ -164,9 +243,9 @@ class DriveUploader {
   /**
    * 上傳純文字速記 / 備註
    * @param {string} textContent 
-   * @param {string} category 
+   * @param {string} categoryKey 
    */
-  async uploadTextNote(textContent, category = "General") {
+  async uploadTextNote(textContent, categoryKey = "UNCLASSIFIED") {
     if (!textContent || !textContent.trim()) {
       throw new Error("請輸入速記內容！");
     }
@@ -176,7 +255,35 @@ class DriveUploader {
     const blob = new Blob([textContent], { type: "text/plain;charset=utf-8" });
     const file = new File([blob], filename, { type: "text/plain" });
 
-    return await this.uploadFileDirect(file, `[速記/分類: ${category}] ${textContent}`);
+    return await this.uploadFileDirect(file, `[速記] ${textContent}`, null, null, categoryKey);
+  }
+
+  /**
+   * 上傳網址捷徑 (.url) 檔至 Google Drive Links/ 子資料夾
+   * @param {string} url - 目標網址
+   * @param {string} title - 網頁標題或說明
+   */
+  async uploadUrlShortcut(url, title = "") {
+    if (!url || !url.trim()) throw new Error("請提供有效網址！");
+    const cleanUrl = url.trim();
+    let domain = "web";
+    try {
+      const u = new URL(cleanUrl);
+      domain = u.hostname.replace(/[^a-zA-Z0-9.-]/g, "_");
+    } catch (e) {}
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    const hms = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const filename = `link_${domain}_${ymd}_${hms}.url`;
+    
+    // Windows 標準網頁快捷方式檔內容格式
+    const fileContent = `[InternetShortcut]\nURL=${cleanUrl}\nTitle=${title || domain}\nCreated=${now.toISOString()}\n`;
+    const blob = new Blob([fileContent], { type: "text/plain;charset=utf-8" });
+    const file = new File([blob], filename, { type: "text/plain" });
+
+    return await this.uploadFileDirect(file, `[網址鏈結] ${title || cleanUrl}`, null, null, "LINKS");
   }
 
   /**

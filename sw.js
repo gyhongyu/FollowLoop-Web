@@ -1,8 +1,8 @@
-// FollowLoop PWA Service Worker (V4.6.6 - OpenRouter Multimodal & High-Contrast Console)
+// FollowLoop PWA Service Worker (V4.8.1 - 8-Scene RawInputs Router & Background Worker Confidence Gate)
 // 快取策略：靜態資源 Network-First (網路優先+快取備援)，API / GAS 請求 Network-Only (完全直通)
 // 支援 Web Share Target Level 2 檔案接收並安全中轉至 IndexedDB
 
-const CACHE_NAME = 'followloop-pwa-v4.6.6';
+const CACHE_NAME = 'followloop-pwa-v4.8.1';
 
 // 預快取靜態資源清單
 const STATIC_ASSETS = [
@@ -14,16 +14,17 @@ const STATIC_ASSETS = [
   './css/components.css?v=4.6',
   './css/responsive.css?v=4.6',
   './css/themes.css?v=4.6',
-  './js/config.js?v=4.6.6',
-  './js/openrouter-worker.js?v=4.6.6',
-  './js/openrouter_extractor.js?v=4.6.6',
-  './js/admin_panel.js?v=4.6.6',
-  './js/drive_uploader.js?v=4.6.6',
-  './js/hitl_reviewer.js?v=4.6.6',
-  './js/live_view.js?v=4.6.6',
-  './js/project_manager.js?v=4.6.6',
-  './js/auth.js?v=4.6.6',
-  './js/app.js?v=4.6.6',
+  './js/config.js?v=4.8.0',
+  './js/openrouter-worker.js?v=4.8.0',
+  './js/openrouter_extractor.js?v=4.8.0',
+  './js/admin_panel.js?v=4.8.0',
+  './js/drive_uploader.js?v=4.8.0',
+  './js/hitl_reviewer.js?v=4.8.0',
+  './js/live_view.js?v=4.8.0',
+  './js/project_manager.js?v=4.8.0',
+  './js/auth.js?v=4.8.0',
+  './js/app.js?v=4.8.0',
+  './js/background-pipeline.js?v=4.8.0',
   './img/icons/icon-192.png',
   './img/icons/icon-512.png',
   './img/icons/icon-maskable-512.png',
@@ -121,10 +122,17 @@ self.addEventListener('fetch', (event) => {
         const text = formData.get('text') || '';
         const sharedUrl = formData.get('url') || '';
 
-        console.log(`[PWA SW] 收到 Web Share Target 檔案分享: ${mediaFiles.length} 個檔案, title: ${title}`);
+        console.log(`[PWA SW] 收到 Web Share Target 檔案分享: ${mediaFiles.length} 個檔案, title: ${title}, text: ${text}, url: ${sharedUrl}`);
 
         if (mediaFiles && mediaFiles.length > 0) {
           await saveSharedFiles(mediaFiles, { title, text, url: sharedUrl });
+        } else if (sharedUrl || text) {
+          // 純網址或純文字分享 (無附加檔案)
+          await saveSharedFiles([{
+            name: sharedUrl ? `url_${Date.now()}.url` : `text_${Date.now()}.txt`,
+            type: sharedUrl ? 'text/uri-list' : 'text/plain',
+            size: (sharedUrl || text).length
+          }], { title, text, url: sharedUrl });
         }
 
         // 以 303 See Other 重新導向至主頁，並附加 #share-incoming 錨點喚醒前台

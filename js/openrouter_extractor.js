@@ -204,10 +204,33 @@ ${projectsContext}
   }
 
   /**
-   * 清理並解析大模型回傳的 JSON
+   * 清理並解析大模型回傳的 JSON (具備強韌的正則救援機制與思考標籤過濾)
    */
-  parseJsonResponse(rawText) {
+  parseJsonResponse(rawInput) {
+    let rawText = "";
+    if (typeof rawInput === "string") {
+      rawText = rawInput;
+    } else if (rawInput && typeof rawInput.content === "string") {
+      rawText = rawInput.content;
+    } else if (rawInput && typeof rawInput === "object") {
+      if (rawInput.category || rawInput.is_valid !== undefined) {
+        return rawInput;
+      }
+      try {
+        rawText = JSON.stringify(rawInput);
+      } catch (e) {
+        rawText = String(rawInput);
+      }
+    } else {
+      rawText = String(rawInput || "");
+    }
+
     let clean = (rawText || "").trim();
+
+    // 🌟 過濾思考標籤 <think>...</think>（防止現代思考模型耗盡/干擾 JSON 解析）
+    clean = clean.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+    // 清理 Markdown 代碼區塊
     if (clean.startsWith("```json")) clean = clean.slice(7);
     if (clean.startsWith("```")) clean = clean.slice(3);
     if (clean.endsWith("```")) clean = clean.slice(0, -3);
@@ -216,7 +239,20 @@ ${projectsContext}
     const match = clean.match(/\{[\s\S]*\}/);
     if (match) clean = match[0];
 
-    return JSON.parse(clean);
+    try {
+      return JSON.parse(clean);
+    } catch (e) {
+      console.warn("[OpenRouterExtractor] JSON.parse 失敗，啟動正則容錯提取:", clean);
+      // 正則救援提取 category (安全字串操作，絕對不拋出 TypeError)
+      const safeText = String(rawText || clean || "");
+      const catMatch = safeText.match(/\b(BUSINESS_CARDS|VOUCHERS|CHAT_SCREENSHOTS|TRAVEL_TRACKS|PROJECT_DOCS|UNCLASSIFIED)\b/i);
+      const category = catMatch ? catMatch[1].toUpperCase() : "UNCLASSIFIED";
+      return {
+        category: category,
+        is_same_entity: !safeText.includes("is_same_entity: false") && !safeText.includes('"is_same_entity": false'),
+        summary: clean.slice(0, 50) || "素材識別"
+      };
+    }
   }
 
   /**
@@ -255,7 +291,7 @@ ${projectsContext}
         ]
       });
 
-      const parsed = this.parseJsonResponse(res.content);
+      const parsed = this.parseJsonResponse(res);
 
       if (parsed.is_valid === false) {
         throw new Error("AI 判定此內容無具體商務事實或動態，已取消建立卡片。");
@@ -330,7 +366,7 @@ ${projectsContext}
       ]
     });
 
-    const parsed = this.parseJsonResponse(res.content);
+    const parsed = this.parseJsonResponse(res);
 
     if (parsed.is_valid === false) {
       throw new Error("AI 判定此圖片無具體商務事實或動態。");
@@ -388,7 +424,7 @@ ${projectsContext}
       ]
     });
 
-    const parsed = this.parseJsonResponse(res.content);
+    const parsed = this.parseJsonResponse(res);
 
     if (parsed.is_valid === false) {
       throw new Error("AI 判定此錄音無具體商務事實。");
@@ -439,7 +475,7 @@ ${projectsContext}
       ]
     });
 
-    const parsed = this.parseJsonResponse(res.content);
+    const parsed = this.parseJsonResponse(res);
 
     let tag = parsed.project_tag || "NEW_UNCLASSIFIED";
     if (tag !== "NEW_UNCLASSIFIED") {
@@ -464,7 +500,118 @@ ${projectsContext}
       confidence_score: parsed.confidence_score || (isValid ? 0.90 : 0.60)
     };
   }
+
+  /**
+   * 5. ⚡ 物理場景快速初篩 (Scene Classifier - 僅需回答 6 大類別 Enum)
+   * @param {string} dataUrl - 圖片 Base64 Data URL
+   * @param {string} userNotes - 備註
+   * @returns {Promise<Object>} { category: "VOUCHERS", summary: "..." }
+   */
+  async classifyScene(dataUrl, userNotes = "") {
+    this.worker.apiKey = getOpenRouterApiKey();
+    const systemPrompt = `你是一個出差商務素材快速分類助手。
+請觀察圖片內容並將其歸入以下唯一類別：
+- VOUCHERS: 紙本發票、收據、機票住宿水單、UPI / 銀行轉帳付款成功截圖、計程車手寫票
+- BUSINESS_CARDS: 客戶或商業夥伴的名片正反面
+- CHAT_SCREENSHOTS: WhatsApp、WeChat、Email 或通訊軟體對話/承諾截圖
+- TRAVEL_TRACKS: Google Maps 導航路線截圖、拜訪現場照片、與客戶合影照片
+- PROJECT_DOCS: 技術規格書截圖、合約、報價單、產品結構圖
+- UNCLASSIFIED: 無法明確辨識之其他圖片
+
+請直接輸出極簡純 JSON：
+{
+  "category": "VOUCHERS | BUSINESS_CARDS | CHAT_SCREENSHOTS | TRAVEL_TRACKS | PROJECT_DOCS | UNCLASSIFIED",
+  "summary": "一句話簡短說明(例如: 飯店住宿發票 / VVDN拜訪合影 / 轉帳500盧比)"
+}`;
+
+    const userPrompt = userNotes.trim() ? `【使用者備註】：${userNotes}\n請判定分類。` : "請判定此圖片之業務分類。";
+
+    try {
+      const res = await this.worker.call({
+        task: 'vision',
+        isVision: true,
+        temperature: 0.1,
+        maxTokens: 600,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: userPrompt },
+              { type: "image_url", image_url: { url: dataUrl } }
+            ]
+          }
+        ]
+      });
+
+      const parsed = this.parseJsonResponse(res);
+      const validCategories = ["VOUCHERS", "BUSINESS_CARDS", "CHAT_SCREENSHOTS", "TRAVEL_TRACKS", "PROJECT_DOCS", "UNCLASSIFIED"];
+      const finalCat = validCategories.includes(parsed.category) ? parsed.category : "UNCLASSIFIED";
+      return {
+        category: finalCat,
+        summary: parsed.summary || "圖片素材"
+      };
+    } catch (e) {
+      console.warn("[OpenRouterExtractor] classifyScene 異常，回退至 UNCLASSIFIED:", e);
+      return { category: "UNCLASSIFIED", summary: "未分類素材" };
+    }
+  }
+
+  /**
+   * 6. ⚡ 多圖綜合場景判定（支援正反面融合探測）
+   * @param {Array<string>} dataUrls - 多張圖片的 Base64 Data URL 陣列
+   * @param {string} userNotes - 備註
+   * @returns {Promise<Object>} { category: "BUSINESS_CARDS", is_same_entity: true, summary: "..." }
+   */
+  async classifyMultiImages(dataUrls, userNotes = "") {
+    this.worker.apiKey = getOpenRouterApiKey();
+    const systemPrompt = `你是一個商務出差素材多圖關聯分析助手。
+使用者同時上傳了 ${dataUrls.length} 張圖片。
+請依序觀察這些圖片，並判定：
+1. 它們是什麼業務分類？(VOUCHERS | BUSINESS_CARDS | CHAT_SCREENSHOTS | TRAVEL_TRACKS | PROJECT_DOCS | UNCLASSIFIED)
+2. 如果是名片 (BUSINESS_CARDS)，這幾張圖是否為「同一張名片的正面與背面」？
+   - is_same_entity: true (同一人的正反面)
+   - is_same_entity: false (兩張完全不同的名片，例如不同的人)
+
+請直接輸出極簡純 JSON：
+{
+  "category": "VOUCHERS | BUSINESS_CARDS | CHAT_SCREENSHOTS | TRAVEL_TRACKS | PROJECT_DOCS | UNCLASSIFIED",
+  "is_same_entity": true,
+  "summary": "一句話簡短說明(例如: 同一張名片之正反面 / 兩位不同窗口名片 / 連續出差發票)"
+}`;
+
+    const userPrompt = userNotes.trim() ? `【使用者備註】：${userNotes}\n請判定多圖分類與關聯性。` : "請判定此批圖片之分類與正反面關聯性。";
+
+    const contentArray = [{ type: "text", text: userPrompt }];
+    dataUrls.forEach(url => {
+      contentArray.push({ type: "image_url", image_url: { url } });
+    });
+
+    try {
+      const res = await this.worker.call({
+        task: 'vision',
+        isVision: true,
+        temperature: 0.1,
+        maxTokens: 800,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contentArray }
+        ]
+      });
+
+      const parsed = this.parseJsonResponse(res);
+      const validCategories = ["VOUCHERS", "BUSINESS_CARDS", "CHAT_SCREENSHOTS", "TRAVEL_TRACKS", "PROJECT_DOCS", "UNCLASSIFIED"];
+      const finalCat = validCategories.includes(parsed.category) ? parsed.category : "UNCLASSIFIED";
+      return {
+        category: finalCat,
+        is_same_entity: parsed.is_same_entity !== false,
+        summary: parsed.summary || "多圖素材"
+      };
+    } catch (e) {
+      console.warn("[OpenRouterExtractor] classifyMultiImages 異常:", e);
+      return { category: "UNCLASSIFIED", is_same_entity: false, summary: "未分類素材" };
+    }
+  }
 }
 
-// 實例化並掛載至全局
 window.openRouterExtractor = new OpenRouterExtractor();

@@ -7,24 +7,65 @@
 
 const STORAGE_KEY_DISABLED = 'openrouter_worker_disabled_models';
 const STORAGE_KEY_COOLING = 'openrouter_worker_cooling_models';
+const STORAGE_KEY_LAST_USED = 'openrouter_worker_last_used_map';
 
 class OpenRouterWorkerClient {
   /**
    * @param {Object} options
-   * @param {string} options.apiKey - OpenRouter API Key
+   * @param {string} [options.apiKey] - OpenRouter API Key
    * @param {string} [options.gasUrl] - Google Sheet GAS WebApp 網址
    * @param {Object} [options.modelsRegistry] - 本地兜底 models.json
    */
   constructor(options = {}) {
-    this.apiKey = options.apiKey || atob("c2stb3ItdjEtMGFiYzM1YTlhZTI1NzlmOThlNGU4YjNlM2RiMTIzYTY1NWE1NTU3MTE4NjgwYjlkNTcwNGI0NGY0NzYwMWNhNQ==");
+    this.apiKey = options.apiKey || (window.CONFIG && CONFIG.OPENROUTER_DEFAULT_KEY) || '';
+    this.groqApiKey = options.groqApiKey || localStorage.getItem('fl_groq_key') || '';
+    this.geminiApiKey = options.geminiApiKey || localStorage.getItem('fl_gemini_key') || '';
+    
     this.baseUrl = 'https://openrouter.ai/api/v1';
+    this.groqBaseUrl = 'https://api.groq.com/openai/v1';
+    this.geminiBaseUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
     this.gasUrl = options.gasUrl || 'https://script.google.com/macros/s/AKfycbwWo9Tf5J8DKV0MgekZQdUpWh2ch7qDwqRC7gXi_5ht_Ng_ErnqeC4NqTKEf1RiNaSSJQ/exec';
     this.registry = options.modelsRegistry || { models: [] };
     this.cloudModels = null;
   }
 
+  getEndpointForModel(modelId) {
+    const mid = String(modelId || '').toLowerCase();
+    if (mid.startsWith('openai/gpt-oss') || mid.startsWith('qwen/') || mid.startsWith('groq/') || mid.includes('whisper')) {
+      return {
+        url: `${this.groqBaseUrl}/chat/completions`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.groqApiKey}`
+        },
+        targetModel: modelId
+      };
+    } else if (mid.startsWith('gemini-') || mid.startsWith('models/gemini')) {
+      return {
+        url: `${this.geminiBaseUrl}/chat/completions`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.geminiApiKey}`
+        },
+        targetModel: modelId.replace('models/', '')
+      };
+    } else {
+      return {
+        url: `${this.baseUrl}/chat/completions`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'http://localhost',
+          'X-Title': 'OpenRouter Universal Worker'
+        },
+        targetModel: modelId
+      };
+    }
+  }
+
   // -------------------------------------------------------------
-  // ☁️ 雲端拉取與本地冷卻過濾
+  // ☁️ 雲端拉取與本地冷卻/輪替管理
   // -------------------------------------------------------------
   async fetchActiveModelsFromCloud(task = 'text') {
     if (!this.gasUrl) return [];
@@ -65,8 +106,33 @@ class OpenRouterWorkerClient {
     } catch (e) { return {}; }
   }
 
+  getLastUsedMap() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_LAST_USED);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  }
+
+  recordModelSuccess(modelId) {
+    if (!modelId) return;
+    try {
+      const map = this.getLastUsedMap();
+      map[modelId] = Date.now();
+      localStorage.setItem(STORAGE_KEY_LAST_USED, JSON.stringify(map));
+    } catch (e) {}
+
+    // 異步回報雲端解除冷卻與成功計數
+    if (this.gasUrl) {
+      fetch(this.gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'report_status', model_id: modelId, status_type: 'success' })
+      }).catch(() => {});
+    }
+  }
+
   markModelStatus(modelId, statusType = '404') {
-    if (modelId === 'openrouter/free') return; // 保底不封鎖
+    if (modelId === 'openrouter/free') return;
 
     const disabled = this.getDisabledModels();
     const cooling = this.getCoolingModels();
@@ -77,7 +143,10 @@ class OpenRouterWorkerClient {
         localStorage.setItem(STORAGE_KEY_DISABLED, JSON.stringify(disabled));
       }
     } else if (statusType === '429') {
-      cooling[modelId] = Date.now() + 15 * 60 * 1000; // 冷卻 15 分鐘
+      cooling[modelId] = Date.now() + 15 * 60 * 1000;
+      localStorage.setItem(STORAGE_KEY_COOLING, JSON.stringify(cooling));
+    } else if (statusType === '500' || statusType === '503') {
+      cooling[modelId] = Date.now() + 3 * 60 * 1000;
       localStorage.setItem(STORAGE_KEY_COOLING, JSON.stringify(cooling));
     }
 
@@ -91,7 +160,7 @@ class OpenRouterWorkerClient {
     }
   }
 
-  async getAvailableModels({ isVision = false, isAudio = false, isVideo = false, task = 'text' } = {}) {
+  async getAvailableModels({ isVision = false, isAudio = false, isVideo = false, task = 'text', minParamsB = 0 } = {}) {
     let list = await this.fetchActiveModelsFromCloud(task);
     if (!list || list.length === 0) {
       list = this.registry.models || [];
@@ -99,11 +168,13 @@ class OpenRouterWorkerClient {
 
     const disabled = this.getDisabledModels();
     const cooling = this.getCoolingModels();
+    const lastUsedMap = this.getLastUsedMap();
 
-    // 過濾黑名單與冷卻中模型
+    // 過濾黑名單、冷卻中與低於最低參量要求的模型
     const active = list.filter(m => {
       if (m.status === 'disabled' || disabled.includes(m.id)) return false;
       if (cooling[m.id]) return false;
+      if (minParamsB > 0 && m.id !== 'openrouter/free' && (m.params_b || 0) < minParamsB) return false;
       return true;
     });
 
@@ -121,127 +192,144 @@ class OpenRouterWorkerClient {
     const primary = matched.filter(m => m.id !== 'openrouter/free');
     const fallback = matched.filter(m => m.id === 'openrouter/free');
 
-    // 依參量由大到小排序
-    primary.sort((a, b) => (b.params_b || 0) - (a.params_b || 0));
+    // 🌟 智慧階梯分桶 (Tiered Buckets)：≥100B 旗艦或 Gemini 全系皆進入 Tier 1 主力梯隊
+    const tier1 = primary.filter(m => (m.params_b || 0) >= 100 || (m.id || '').toLowerCase().includes('gemini'));
+    const tier2 = primary.filter(m => (m.params_b || 0) >= 30 && (m.params_b || 0) < 100 && !(m.id || '').toLowerCase().includes('gemini'));
+    const tier3 = primary.filter(m => (m.params_b || 0) > 0 && (m.params_b || 0) < 30 && !(m.id || '').toLowerCase().includes('gemini'));
 
-    const result = [...primary, ...fallback];
+    // 🌟 同階梯 LRU 最久未調用優先出戰
+    const sortByLru = (arr) => arr.slice().sort((a, b) => (lastUsedMap[a.id] || 0) - (lastUsedMap[b.id] || 0));
+
+    const result = [...sortByLru(tier1), ...sortByLru(tier2), ...sortByLru(tier3), ...fallback];
     if (!result.some(m => m.id === 'openrouter/free')) {
-      result.push({ id: 'openrouter/free', params_b: 0, modalities: ['text', 'image'] });
+      result.push({ id: 'openrouter/free', name: 'OpenRouter Free Auto-Router', params_b: 0, modalities: ['text', 'image'], status: 'active' });
     }
     return result;
   }
 
   // -------------------------------------------------------------
-  // 🚀 通用請求調用核心
+  // 🚀 通用請求調用核心 (支援 onProgress 動態解耦日誌事件與多平台端點適配)
   // -------------------------------------------------------------
-  async call({ messages, task = 'text', isVision = false, isAudio = false, isVideo = false, maxTokens = 1500, temperature = 0.3 }) {
-    const candidates = await this.getAvailableModels({ isVision, isAudio, isVideo, task });
+  async call({ messages, task = 'text', isVision = false, isAudio = false, isVideo = false, minParamsB = 0, temperature = 0.3, maxTokens = null, max_tokens = null, onProgress = null }) {
+    const candidates = await this.getAvailableModels({ isVision, isAudio, isVideo, task, minParamsB });
     let lastError = null;
+    let attempt = 0;
 
-    if (window.FL_AI_LOGGER && candidates.length > 0) {
-      window.FL_AI_LOGGER.log("模型隊列篩選", `候選模型: ${candidates.slice(0, 3).map(m => `${m.id.split('/').pop()}(${m.params_b || 0}B)`).join(', ')} (共 ${candidates.length} 個)`);
-    }
-
-    for (let i = 0; i < candidates.length; i++) {
-      const model = candidates[i];
-      const modelShort = model.id.split('/').pop();
-      const modelLabel = model.params_b ? `${modelShort} (${model.params_b}B)` : modelShort;
-
-      if (window.FL_AI_LOGGER) {
-        window.FL_AI_LOGGER.log(`嘗試調用模型 [${i + 1}/${candidates.length}]`, `${modelLabel}`);
+    for (const model of candidates) {
+      attempt++;
+      const pLabel = model.params_b ? ` (${model.params_b}B)` : '';
+      if (typeof onProgress === 'function') {
+        onProgress({
+          stage: 'connecting',
+          model: model.id,
+          modelName: model.name || model.id,
+          params_b: model.params_b || 0,
+          attempt: attempt,
+          total: candidates.length,
+          message: `🤖 連線打工仔模型: ${model.id}${pLabel} ...`
+        });
       }
 
       try {
-        const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        const endpoint = this.getEndpointForModel(model.id);
+        const reqBody = {
+          model: endpoint.targetModel,
+          messages: messages,
+          temperature: temperature
+        };
+        const tokenLimit = maxTokens || max_tokens;
+        if (tokenLimit && tokenLimit > 0) {
+          reqBody.max_tokens = tokenLimit;
+        }
+
+        const response = await fetch(endpoint.url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
-            'HTTP-Referer': (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://foxlink.co.in',
-            'X-Title': 'FollowLoop OpenRouter Worker'
-          },
-          body: JSON.stringify({
-            model: model.id,
-            messages: messages,
-            max_tokens: maxTokens,
-            temperature: temperature
-          })
+          headers: endpoint.headers,
+          body: JSON.stringify(reqBody)
         });
 
         if (!response.ok) {
           const errText = await response.text();
+          let statusType = '500';
           if (response.status === 404 || errText.includes('404')) {
-            this.markModelStatus(model.id, '404');
+            statusType = '404';
           } else if (response.status === 429 || errText.includes('429') || errText.includes('rate limit')) {
-            this.markModelStatus(model.id, '429');
-          } else if (response.status >= 500) {
-            this.markModelStatus(model.id, '500');
+            statusType = '429';
           }
-          throw new Error(`HTTP ${response.status}: ${errText.slice(0, 100)}`);
+          this.markModelStatus(model.id, statusType);
+
+          const warnMsg = `模型 ${model.id} HTTP ${response.status} (${statusType === '429' ? '頻率限制冷卻15分' : '異常'})，自動輪替至下一位打工仔...`;
+          if (typeof onProgress === 'function') {
+            onProgress({ stage: 'error', model: model.id, statusType, message: `⚠️ ${warnMsg}` });
+          }
+          throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        if (typeof onProgress === 'function') {
+          onProgress({ stage: 'receiving', model: model.id, message: '📥 收到模型回執數據，正在校驗結構...' });
         }
 
         const data = await response.json();
         const content = data.choices?.[0]?.message?.content;
         if (content) {
-          if (window.FL_AI_LOGGER) {
-            window.FL_AI_LOGGER.log(`✅ 模型回應成功`, `${modelLabel}`);
+          this.recordModelSuccess(model.id);
+          if (typeof onProgress === 'function') {
+            onProgress({ stage: 'success', model: model.id, message: `🎉 模型 ${model.id} 解析成功！` });
           }
+          const trimmed = content.trim();
           return {
-            content: content.trim(),
+            content: trimmed,
             model: model.id,
-            params_b: model.params_b || 0
+            params_b: model.params_b || 0,
+            toString() { return this.content; },
+            valueOf() { return this.content; }
           };
         } else {
-          throw new Error("模型回傳為空字串");
+          throw new Error(`Invalid or empty choices returned from ${model.id}`);
         }
       } catch (err) {
         lastError = err;
-        if (window.FL_AI_LOGGER) {
-          window.FL_AI_LOGGER.log(`⚠️ 模型失敗 (${modelLabel})`, `${err.message} ➔ 自動切換下一個模型`, "error");
-        }
-        console.warn(`[OpenRouterWorker] 模型 ${model.id} 調用失敗:`, err.message);
+        continue;
       }
     }
 
-    throw lastError || new Error("所有可用模型皆調用失敗");
+    throw new Error(`所有打工仔模型皆暫時無法回應。最後錯誤: ${lastError?.message || lastError}`);
   }
 
   // -------------------------------------------------------------
   // ⚡ 預設開箱即用快捷方法
   // -------------------------------------------------------------
   async summarize(text) {
-    const res = await this.call({
+    return this.call({
       task: 'text',
       messages: [
         { role: 'system', content: 'You are a concise summarizer. Output key points directly in Traditional Chinese.' },
         { role: 'user', content: `請提煉以下內容重點：\n\n${text}` }
       ]
     });
-    return res.content;
   }
 
   async voiceDistill(text) {
-    const res = await this.call({
+    return this.call({
       task: 'text',
       messages: [
         { role: 'system', content: 'You distill technical summaries into spoken plain text in 3 sentences without Markdown.' },
         { role: 'user', content: `請濃縮提煉為3句內語音大白話：\n\n${text}` }
       ]
     });
-    return res.content;
   }
 
   async cleanJson(text) {
-    const res = await this.call({
+    return this.call({
       task: 'text',
       messages: [
         { role: 'system', content: 'You are a data cleaner. Output clean raw JSON only without markdown formatting.' },
         { role: 'user', content: `請將以下資料清洗為 JSON：\n\n${text}` }
       ]
     });
-    return res.content;
   }
 }
 
-// 掛載至 window
-window.OpenRouterWorkerClient = OpenRouterWorkerClient;
+if (typeof window !== 'undefined') {
+  window.OpenRouterWorkerClient = OpenRouterWorkerClient;
+}

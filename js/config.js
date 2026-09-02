@@ -12,12 +12,28 @@ const CONFIG = {
   
   // 2. Google Drive 二階段大檔直傳專用 (模組一 ⚡ 直傳門閥)
   GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbywZiZgUu1pqrbQp43PDsiVQIrCE7fDvwTtdGd6_BaOzeozCX3DDJTg9iTWl1_8EXyw_g/exec",
+  
+  // 3. Google Contacts 萬能網關 (google_contacts_gateway)
+  CONTACTS_GATEWAY_URL: "https://script.google.com/macros/s/AKfycbyKnxJ2waOYny88XQH_65GagqVpcbBGVh7vCMwIT4JwowO2u__k6CUk1NDbTDrs-oqQ/exec",
+  
   SPREADSHEET_ID: "1YgwlA-f5Iq487-0FVU2ChOckNVLb3h1ejbrUNkUr4WQ",
   
   // Google Drive 資料夾 ID (SSOT)
   DRIVE_RAW_INPUTS_FOLDER_NAME: "FollowLoop_RawInputs",
   DRIVE_ATTACHMENTS_FOLDER_ID: "1qSx-L6u6thXV_JY5oLu5gXg_58hVRAnX",
   DRIVE_ATTACHMENTS_FOLDER_NAME: "Projects_Attachments",
+
+  // 🗂️ 全域唯一 素材物理場景分類契約 (RAW_SCENE_CATEGORIES SSOT)
+  RAW_SCENE_CATEGORIES: {
+    VOUCHERS: { folder: "Vouchers", prefix: "voucher", icon: "🧾", label: "報銷單據/發票/機票/UPI" },
+    VOICE_MEMOS: { folder: "VoiceMemos", prefix: "audio", icon: "🎙️", label: "出差語音/會議錄音" },
+    BUSINESS_CARDS: { folder: "BusinessCards", prefix: "card", icon: "🪪", label: "名片正反面" },
+    CHAT_SCREENSHOTS: { folder: "ChatScreenshots", prefix: "chat", icon: "💬", label: "對話/承諾截圖" },
+    TRAVEL_TRACKS: { folder: "TravelTracks", prefix: "track", icon: "📍", label: "導航/合影/出差佐證" },
+    PROJECT_DOCS: { folder: "ProjectDocs", prefix: "doc", icon: "📄", label: "規格書/報價/合約/PPT" },
+    LINKS: { folder: "Links", prefix: "link", icon: "🌐", label: "網址與新聞鏈結" },
+    UNCLASSIFIED: { folder: "Unclassified", prefix: "raw", icon: "📦", label: "未分類 (0 LLM 直傳)" }
+  },
   
   // CORS 安全防護標頭 (全系統強制使用 text/plain 以避開 Preflight 跨域阻擋)
   FETCH_HEADERS: {
