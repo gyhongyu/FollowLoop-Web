@@ -70,14 +70,14 @@ class AiTaskLogger {
     const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
     this.appendLog(`🎉 [完成] ${message} (總耗時: ${elapsed}s)`, "success");
     this.currentTask = null;
-    this.updatePill("✅ AI 就緒", "success", "上一個任務已完成");
+    this.updatePill("AI 就緒", "success", "上一個任務已完成");
   }
 
   failTask(errorMessage = "執行失敗") {
     const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
     this.appendLog(`❌ [失敗] ${errorMessage} (停格於: ${elapsed}s)`, "error");
     this.currentTask = null;
-    this.updatePill("❌ AI 異常", "error", errorMessage);
+    this.updatePill("AI 異常", "error", errorMessage);
   }
 
   appendLog(text, level = "info") {
@@ -857,17 +857,87 @@ function initIngestionModule() {
     }
 
     // 🌟 3. 彈出分類確認選單（1 點即發，確保 100% 絕對真理分流）
-    const chosenCat = await promptQuickCategoryModal(file, defaultCat, summaryHint, userNotes);
+    let chosenCat = await promptQuickCategoryModal(file, defaultCat, summaryHint, userNotes);
     if (!chosenCat) {
       showToast("已取消上傳", "info");
       return;
+    }
+
+    if (chosenCat === "CARDS_SINGLE" || chosenCat === "CARDS_DOUBLE") {
+      chosenCat = "BUSINESS_CARDS";
     }
 
     await executeDirectCategorizedUpload(file, userNotes, chosenCat);
   }
 
   /**
-   * 🌟 批次素材分流處理器 (支援名片正反面成對關聯與多檔案批次 1 點入箱)
+   * 🖼️ Canvas 本地將 2 張圖片上下無損合併為單一圖片物件 (雙面名片合體神器)
+   * @param {File} file1 - 正面圖檔
+   * @param {File} file2 - 背面圖檔
+   * @returns {Promise<File>} 合併後的 File 物件
+   */
+  async function mergeTwoImagesVertically(file1, file2) {
+    return new Promise((resolve, reject) => {
+      const img1 = new Image();
+      const img2 = new Image();
+      let loadedCount = 0;
+
+      const onLoad = () => {
+        loadedCount++;
+        if (loadedCount < 2) return;
+
+        // 計算 Canvas 尺寸：寬度取兩者最大，高度相加
+        const targetWidth = Math.max(img1.naturalWidth || img1.width, img2.naturalWidth || img2.width);
+        // 按比例計算各自高度
+        const h1 = ((img1.naturalHeight || img1.height) * (targetWidth / (img1.naturalWidth || img1.width))) || 600;
+        const h2 = ((img2.naturalHeight || img2.height) * (targetWidth / (img2.naturalWidth || img2.width))) || 600;
+        const padding = 20; // 中間留一條細微分界
+        const targetHeight = Math.round(h1 + h2 + padding);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+
+        // 填入乾淨白底
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+        // 繪製正面 (上方)
+        ctx.drawImage(img1, 0, 0, targetWidth, h1);
+
+        // 繪製分隔線
+        ctx.fillStyle = "#e2e8f0";
+        ctx.fillRect(0, h1 + 8, targetWidth, 4);
+
+        // 繪製背面 (下方)
+        ctx.drawImage(img2, 0, h1 + padding, targetWidth, h2);
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("Canvas 合成名片圖檔失敗"));
+            return;
+          }
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, "0");
+          const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+          const mergedFile = new File([blob], `card_${ymd}_merged.jpg`, { type: "image/jpeg" });
+          resolve(mergedFile);
+        }, "image/jpeg", 0.92);
+      };
+
+      img1.onload = onLoad;
+      img2.onload = onLoad;
+      img1.onerror = (e) => reject(new Error("讀取第一張名片圖片失敗: " + e));
+      img2.onerror = (e) => reject(new Error("讀取第二張名片圖片失敗: " + e));
+
+      img1.src = URL.createObjectURL(file1);
+      img2.src = URL.createObjectURL(file2);
+    });
+  }
+
+  /**
+   * 🌟 批次素材分流處理器 (支援名片正反面成對合體與多檔案批次 1 點入箱)
    * @param {Array<File>} files 
    */
   async function handleFilesBatch(files) {
@@ -884,8 +954,8 @@ function initIngestionModule() {
 
     // 2. 🌟 批次上傳彈窗：一次指定整批檔案的目標箱 (0 LLM 消耗，1 點即傳)
     let defaultCat = "UNCLASSIFIED";
-    if (allImages && files.length === 2) {
-      defaultCat = "BUSINESS_CARDS";
+    if (allImages) {
+      defaultCat = files.length === 2 ? "CARDS_DOUBLE" : "CARDS_SINGLE";
     }
 
     const chosenCat = await promptQuickCategoryModal(files, defaultCat, `已選取 ${files.length} 個檔案`, userNotes);
@@ -894,29 +964,48 @@ function initIngestionModule() {
       return;
     }
 
-    // 🪪 若使用者選擇名片且剛好為 2 張圖 ➔ 自動進行成對 front/back 命名關聯
-    if (chosenCat === "BUSINESS_CARDS" && files.length === 2 && allImages) {
-      showToast(`🪪 偵測到 2 張名片圖片，正在成對關聯上傳至 BusinessCards/ 箱...`, "info");
+    // 🪪 情況 A：使用者選擇【🔄 雙面名片 (合拼為1張)】
+    if (chosenCat === "CARDS_DOUBLE") {
+      if (files.length !== 2) {
+        showToast("⚠️ 雙面名片合體僅限選取 2 張圖片 (正面與背面)！", "warning");
+        return;
+      }
+      try {
+        showToast("🔄 正在本地將名片正反面上下合成單張高畫質大圖...", "info");
+        const mergedCardFile = await mergeTwoImagesVertically(files[0], files[1]);
+        showToast("⚡ 合成完畢！開始直傳至 BusinessCards/ 箱...", "info");
+        await executeDirectCategorizedUpload(mergedCardFile, `[雙面名片合併] ${userNotes}`.trim(), "BUSINESS_CARDS");
+        showToast("🎉 雙面名片已合為單圖並安全存入！", "success");
+        return;
+      } catch (mergeErr) {
+        console.error("[CardMerge] 合成名片失敗:", mergeErr);
+        showToast(`名片合成失敗: ${mergeErr.message}，改走個別直傳`, "warning");
+      }
+    }
+
+    // 🪪 情況 B：使用者選擇【🪪 單面名片 (批次獨立)】
+    if (chosenCat === "CARDS_SINGLE") {
+      showToast(`🪪 開始將 ${files.length} 張名片作為獨立名片直傳至 BusinessCards/ 箱...`, "info");
       const now = new Date();
       const pad = (n) => String(n).padStart(2, "0");
-      const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
         const ext = f.name.split('.').pop() || "jpg";
-        const sideLabel = i === 0 ? "front" : "back";
-        const pairedName = `card_${ymd}_${sideLabel}.${ext}`;
-        const renamedFile = new File([f], pairedName, { type: f.type });
+        const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${i + 1}`;
+        const singleName = `card_${ymd}.${ext}`;
+        const renamedFile = new File([f], singleName, { type: f.type });
 
-        await executeDirectCategorizedUpload(renamedFile, `[成對名片/${sideLabel}] ${userNotes}`, "BUSINESS_CARDS");
+        await executeDirectCategorizedUpload(renamedFile, userNotes, "BUSINESS_CARDS");
       }
       return;
     }
 
     // 3. 其餘批次檔案：依選定的目標箱全量直傳
-    showToast(`⚡ 開始將 ${files.length} 個檔案直傳至 ${chosenCat} 箱...`, "info");
+    const finalCat = (chosenCat === "BUSINESS_CARDS") ? "BUSINESS_CARDS" : chosenCat;
+    showToast(`⚡ 開始將 ${files.length} 個檔案直傳至 ${finalCat} 箱...`, "info");
     for (let i = 0; i < files.length; i++) {
-      await executeDirectCategorizedUpload(files[i], userNotes, chosenCat);
+      await executeDirectCategorizedUpload(files[i], userNotes, finalCat);
     }
   }
 
@@ -932,10 +1021,35 @@ function initIngestionModule() {
 function initHitlModule() {
   const refreshBtn = document.getElementById("hitl-refresh-btn");
   const badgeCount = document.getElementById("hitl-badge-count");
+  const subBadgeLogs = document.getElementById("hitl-sub-badge-logs");
+  const subBadgeCards = document.getElementById("hitl-sub-badge-cards");
+  const subBtnLogs = document.getElementById("hitl-sub-tab-logs");
+  const subBtnCards = document.getElementById("hitl-sub-tab-cards");
 
-  hitlReviewer.subscribe((cards) => {
-    if (badgeCount) badgeCount.textContent = cards.length;
-    renderHitlCards(cards);
+  // 子頁籤點擊切換事件
+  if (subBtnLogs) {
+    subBtnLogs.addEventListener("click", () => {
+      hitlReviewer.activeSubTab = "business";
+      if (subBtnLogs) subBtnLogs.classList.add("active");
+      if (subBtnCards) subBtnCards.classList.remove("active");
+      renderHitlCards();
+    });
+  }
+
+  if (subBtnCards) {
+    subBtnCards.addEventListener("click", () => {
+      hitlReviewer.activeSubTab = "cards";
+      if (subBtnCards) subBtnCards.classList.add("active");
+      if (subBtnLogs) subBtnLogs.classList.remove("active");
+      renderHitlCards();
+    });
+  }
+
+  hitlReviewer.subscribe((allCards, businessLogs, businessCards) => {
+    if (badgeCount) badgeCount.textContent = allCards.length;
+    if (subBadgeLogs) subBadgeLogs.textContent = businessLogs.length;
+    if (subBadgeCards) subBadgeCards.textContent = businessCards.length;
+    renderHitlCards();
   });
 
   if (refreshBtn) {
@@ -1055,21 +1169,113 @@ function renderHitlCards(cards) {
   const container = document.getElementById("hitl-card-grid");
   if (!container) return;
 
-  if (!cards || cards.length === 0) {
+  // 依當前 activeSubTab 決定展示清單
+  const activeTab = hitlReviewer.activeSubTab || "business";
+  const displayCards = activeTab === "cards" ? hitlReviewer.pendingBusinessCards : hitlReviewer.pendingBusinessLogs;
+
+  if (!displayCards || displayCards.length === 0) {
+    const emptyIcon = activeTab === "cards" ? "🪪" : "✨";
+    const emptyTitle = activeTab === "cards" ? "目前沒有尚待審核的名片" : "目前沒有尚待審核的商業情報";
+    const emptyDesc = activeTab === "cards" ? "上傳名片或後台打工仔解析完成後，名片會出現在此處供您審核入庫至 Google 通訊錄" : "本機 AI 代理人解析完畢後，卡片會自動出現在此處供您 [是 / 修改 / 否] 審核";
+
     container.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-subtle); background: var(--bg-card-glass); border-radius: 16px; border: 1px dashed var(--border-card-light);">
-        <div style="font-size: 48px; margin-bottom: 12px; filter: drop-shadow(0 4px 10px rgba(99,102,241,0.2));">✨</div>
-        <p style="font-size: 1.15rem; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">目前沒有尚待審核的情報卡片</p>
-        <p style="font-size: 0.88rem; color: var(--text-muted);">本機 AI 代理人解析完畢後，卡片會自動出現在此處供您 [是 / 修改 / 否] 審核</p>
+        <div style="font-size: 48px; margin-bottom: 12px; filter: drop-shadow(0 4px 10px rgba(99,102,241,0.2));">${emptyIcon}</div>
+        <p style="font-size: 1.15rem; font-weight: 700; color: var(--text-heading); margin-bottom: 6px;">${emptyTitle}</p>
+        <p style="font-size: 0.88rem; color: var(--text-muted);">${emptyDesc}</p>
       </div>
     `;
     return;
   }
 
+  // 🪪 分支 A：名片專屬審核視圖
+  if (activeTab === "cards") {
+    container.innerHTML = displayCards.map((card) => {
+      const cardId = card.log_id || card.entry_id;
+      const atts = card.attachments || [];
+      const firstImg = atts.length > 0 ? atts[0] : null;
+      const imgUrl = firstImg ? firstImg.url : "";
+      const thumbId = firstImg && firstImg.id ? `https://drive.google.com/thumbnail?id=${firstImg.id}&sz=w400` : "";
+
+      return `
+      <div class="card-hitl-box" id="card-${cardId}">
+        <!-- 頂部標籤 -->
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span class="badge-tag" style="background: rgba(99, 102, 241, 0.18); color: var(--primary-light); font-weight: 700;">🪪 名片辨識</span>
+            <span class="badge-stage" style="background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;">🎯 信心度 95%</span>
+          </div>
+          <span style="font-size: 0.76rem; color: var(--text-subtle); font-family: monospace;">${new Date(card.timestamp).toLocaleString()}</span>
+        </div>
+
+        <!-- 核心名片預覽 (左圖右文) -->
+        <div class="card-preview-container">
+          <div class="card-thumb-wrap" onclick="window.openCardPreviewLightbox('${imgUrl || (firstImg ? firstImg.url : '')}')" title="點擊檢視原圖">
+            ${thumbId ? `<img src="${thumbId}" class="card-thumb-img" alt="名片原圖" onerror="this.src='img/icons/icon-192.png'">` : `<div style="color:var(--text-muted); font-size:2rem;">🪪</div>`}
+            ${imgUrl ? `<span class="card-thumb-badge">🔍 點擊原圖</span>` : ''}
+          </div>
+          <div class="card-info-col">
+            <div class="card-person-name" id="card-name-${cardId}">${card.name || "未知姓名"}</div>
+            <div class="card-person-title">${card.title || "商務窗口"}</div>
+            <div class="card-person-company" title="${card.company}">${card.company || "未填寫公司"}</div>
+          </div>
+        </div>
+
+        <!-- 詳細通訊錄欄位預覽 -->
+        <div class="card-detail-table">
+          <div class="card-detail-row">
+            <span class="card-detail-label">📞 電話:</span>
+            <span class="card-detail-value" style="font-weight:700; color:#10b981;">${card.phone || "無電話號碼"}</span>
+          </div>
+          ${card.email ? `
+          <div class="card-detail-row">
+            <span class="card-detail-label">✉️ Email:</span>
+            <span class="card-detail-value">${card.email}</span>
+          </div>` : ''}
+          ${card.address ? `
+          <div class="card-detail-row">
+            <span class="card-detail-label">📍 地址:</span>
+            <span class="card-detail-value">${card.address}</span>
+          </div>` : ''}
+          ${card.notes ? `
+          <div class="card-detail-row">
+            <span class="card-detail-label">📝 備註:</span>
+            <span class="card-detail-value">${card.notes}</span>
+          </div>` : ''}
+        </div>
+
+        <!-- 🔒 通訊錄公私分流開關 (Foxlink 標籤) -->
+        <div class="card-foxlink-switch">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700; color:var(--text-heading);">
+            <input type="checkbox" id="foxlink-tag-check-${cardId}" checked style="width:16px; height:16px; cursor:pointer;">
+            <span>🏢 標記為 Foxlink 公務人脈 (自動打標)</span>
+          </label>
+          <span style="font-size:0.75rem; color:var(--text-muted);">無標籤則為個人</span>
+        </div>
+
+        <!-- 底部名片專屬操作按鈕 -->
+        <div class="hitl-actions">
+          <button class="btn-approve" onclick="onApproveBusinessCard('${cardId}')" style="flex: 1.2; padding: 9px 14px; font-size: 0.88rem; font-weight: 700;">
+            ✓ 批准入庫 (Google Contacts)
+          </button>
+          <button class="btn-edit" onclick="onEditBusinessCardModal('${cardId}')" style="flex: 0.9; padding: 9px 12px; font-size: 0.88rem; font-weight: 600;">
+            ✎ 修改資料
+          </button>
+          <button class="btn-reject" onclick="onRejectCard('${cardId}')" style="padding: 9px 12px; font-size: 0.88rem; font-weight: 600;" title="作廢並物理抹除">
+            ✕ 作廢
+          </button>
+        </div>
+      </div>
+      `;
+    }).join("");
+    return;
+  }
+
+  // 📜 分支 B：既有商業情報審核視圖
   const projectList = getAvailableProjectsList();
   const nextInfo = calculateNextNewProjectInfo(projectList);
 
-  container.innerHTML = cards
+  container.innerHTML = displayCards
     .map((card) => {
       const logId = card.log_id || card.entry_id;
       const currentTag = card.project_tag || "General";
@@ -1470,6 +1676,112 @@ window.onRejectCard = async function (logId) {
       showToast(`標記失敗: ${err.message}`, "danger");
     }
   }
+};
+
+/* ==========================================================================
+   🪪 名片專屬 HITL 前端交互 (Business Card HITL Interactions)
+   ========================================================================== */
+
+// 1. 批准入庫 (點擊「✓ 批准入庫」)
+window.onApproveBusinessCard = async function(cardId) {
+  const checkEl = document.getElementById(`foxlink-tag-check-${cardId}`);
+  const isFoxlink = checkEl ? checkEl.checked : true;
+
+  try {
+    showToast(`正在將名片入庫至 Google 通訊錄${isFoxlink ? ' (Foxlink 公務人脈)' : ''}...`, "info");
+    const res = await hitlReviewer.approveBusinessCard(cardId, null, isFoxlink);
+    showToast(res.message, "success");
+  } catch (err) {
+    console.error("[HITL] 名片批准失敗:", err);
+    showToast(`名片入庫失敗: ${err.message}`, "danger");
+  }
+};
+
+// 2. 開啟名片編輯 Modal
+window.onEditBusinessCardModal = function(cardId) {
+  const card = hitlReviewer.pendingCards.find(c => c.log_id === cardId || c.entry_id === cardId);
+  if (!card) return;
+
+  const backdrop = document.getElementById("edit-card-modal-backdrop");
+  if (!backdrop) return;
+
+  document.getElementById("modal-card-id").value = cardId;
+  document.getElementById("modal-card-name").value = card.name || "";
+  document.getElementById("modal-card-company").value = card.company || "";
+  document.getElementById("modal-card-title").value = card.title || "";
+  document.getElementById("modal-card-phone").value = card.phone || "";
+  document.getElementById("modal-card-email").value = card.email || "";
+  document.getElementById("modal-card-address").value = card.address || "";
+  document.getElementById("modal-card-notes").value = card.notes || "";
+
+  backdrop.style.display = "flex";
+};
+
+window.closeEditCardModal = function() {
+  const backdrop = document.getElementById("edit-card-modal-backdrop");
+  if (backdrop) backdrop.style.display = "none";
+};
+
+// 3. 提交名片編輯 (更新待審卡片並可直接入庫)
+window.submitEditBusinessCard = async function(andApprove = false) {
+  const cardId = document.getElementById("modal-card-id").value;
+  const updatedData = {
+    name: document.getElementById("modal-card-name").value.trim(),
+    company: document.getElementById("modal-card-company").value.trim(),
+    title: document.getElementById("modal-card-title").value.trim(),
+    phone: document.getElementById("modal-card-phone").value.trim(),
+    email: document.getElementById("modal-card-email").value.trim(),
+    address: document.getElementById("modal-card-address").value.trim(),
+    notes: document.getElementById("modal-card-notes").value.trim()
+  };
+
+  if (!updatedData.name) {
+    showToast("請輸入姓名！", "warning");
+    return;
+  }
+
+  try {
+    if (andApprove) {
+      showToast("正在儲存修訂並入庫 Google 通訊錄...", "info");
+      const res = await hitlReviewer.approveBusinessCard(cardId, updatedData, true);
+      closeEditCardModal();
+      showToast(res.message, "success");
+    } else {
+      showToast("正在更新名片待審資訊...", "info");
+      const res = await hitlReviewer.updateBusinessCard(cardId, updatedData);
+      closeEditCardModal();
+      showToast(res.message, "success");
+    }
+  } catch (err) {
+    showToast(`操作失敗: ${err.message}`, "danger");
+  }
+};
+
+// 4. 原圖檢視燈箱 (支援 Google Drive 縮圖代理高清防破圖)
+window.openCardPreviewLightbox = function(url) {
+  if (!url) return;
+  const lb = document.getElementById("card-lightbox-backdrop");
+  const img = document.getElementById("card-lightbox-img");
+  const link = document.getElementById("card-lightbox-link");
+  if (lb && img) {
+    // 提取 Google Drive File ID 並轉為高清縮圖代理網址 (解決 Google X-Frame-Options 跨域黑屏問題)
+    const fileIdMatch = url.match(/[-\w]{25,}/);
+    if (fileIdMatch) {
+      const fileId = fileIdMatch[0];
+      img.src = `https://drive.google.com/thumbnail?sz=w1200&id=${fileId}`;
+    } else {
+      img.src = url;
+    }
+    if (link) link.href = url;
+    lb.style.display = "flex";
+  } else {
+    window.open(url, "_blank");
+  }
+};
+
+window.closeCardLightbox = function() {
+  const lb = document.getElementById("card-lightbox-backdrop");
+  if (lb) lb.style.display = "none";
 };
 
 

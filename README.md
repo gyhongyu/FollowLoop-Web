@@ -108,10 +108,11 @@ Google Drive 根目錄
 │   ├── 📁 TravelTracks/                        <-- 📍 待處理出差佐證 (前綴 track_)
 │   ├── 📁 ProjectDocs/                         <-- 📄 待處理專案文檔 (前綴 doc_)
 │   ├── 📁 Links/                               <-- 🌐 待處理網址 (前綴 link_)
-│   └── 📁 Unclassified/                        <-- 📦 未分類 (0 LLM 直傳)
+│   ├── 📁 Unclassified/                        <-- 📦 未分類 (0 LLM 直傳)
+│   └── 📁 Pending_Review/                      <-- 🔒 【待審素材物理隔離箱】(提煉完成即刻移入此箱，徹底防止二次重複提煉)
 │
 └── 📁 Projects_Attachments/                   <-- 【正式資產總庫】(ID: 1qSx-L6u6thXV_JY5oLu5gXg_58hVRAnX)
-    ├── 📁 BusinessCards/                      <-- 🪪 已處理名片 (與 Google 聯絡人備註綁定)
+    ├── 📁 BusinessCards/                      <-- 🪪 已核准名片 (與 Google 聯絡人備註綁定)
     ├── 📁 Vouchers/                           <-- 🧾 已處理報銷發票 (與週報/出差單綁定)
     ├── 📁 VoiceMemos/                         <-- 🎙️ 已提煉語音原檔 (與流水帳綁定)
     ├── 📁 ChatScreenshots/                    <-- 💬 已解析對話截圖
@@ -125,7 +126,7 @@ Google Drive 根目錄
 
 | 場景鍵值 (Key) | 子資料夾 (Folder) | 檔名前綴 (Prefix) | 圖示 | 業務場景與分流說明 |
 | :--- | :--- | :--- | :---: | :--- |
-| `BUSINESS_CARDS` | `BusinessCards` | `card` | 🪪 | 名片正反面（批次選 2 張自動以 `front`/`back` 成對關聯） |
+| `BUSINESS_CARDS` | `BusinessCards` | `card` | 🪪 | 名片上傳（支援 Canvas 本地正反面自動上下合成單張長圖或批次獨立） |
 | `VOUCHERS` | `Vouchers` | `voucher` | 🧾 | 出差發票、計程車收據、機票行程單、印度 UPI 支付截圖 |
 | `VOICE_MEMOS` | `VoiceMemos` | `audio` | 🎙️ | 出差口述隨筆、會議錄音、客戶談判現場錄音檔 |
 | `CHAT_SCREENSHOTS` | `ChatScreenshots` | `chat` | 💬 | 微信/WhatsApp 重大商務動態、交期與規格承諾截圖 |
@@ -141,6 +142,7 @@ sequenceDiagram
     autonumber
     participant U as 📱 使用者 / PWA
     participant R as 📁 FollowLoop_RawInputs
+    participant P as 🔒 Pending_Review (隔離箱)
     participant AI as 🤖 打工仔 / 本地 AI
     participant C as 📇 Google Contacts / CRM
     participant A as 📁 Projects_Attachments
@@ -148,9 +150,11 @@ sequenceDiagram
     U->>R: 1. 1點即發分流上傳 (二階段 Resumable 直傳入子箱)
     AI->>R: 2. 靜默輪詢探測新素材 (取得二進位資料)
     AI->>AI: 3. 多模態提煉結構化情報 + 置信度防偽校驗
-    AI->>C: 4. 寫入通訊錄 / CRM 流水帳 (備註附帶 Drive 原圖外鏈)
-    AI->>A: 5. 執行 PATCH API 搬移 (addParents: Attachments, removeParents: Raw)
-    Note over R,A: 100% 保留原始 File ID，外鏈永久生效，Raw 箱回歸 0 積壓！
+    AI->>R: 4. 呈報 HITL 待審隊列 (CARDS_QUEUE / PENDING_REVIEW)
+    AI->>P: 5. 立即 PATCH 移入 Pending_Review/ 隔離箱 (Raw 箱秒速 0 積壓，斬斷重複提煉)
+    U->>C: 6. 人類審核核准 (點擊【✓ 批准入庫】打上 Foxlink 標籤)
+    C->>A: 7. 正式 PATCH 搬移至 Projects_Attachments/ (作廢則自 Pending_Review 物理刪除)
+    Note over R,P,A: 100% 保留原始 File ID，外鏈永久生效，全生命週期零積壓！
 ```
 
 * **安全不變量**：所有歸檔搬移操作均調用 Google Drive REST API 的 `PATCH` 方法更新 `parents` 陣列，**絕不重新下載上傳**，100% 保留原檔之 `file_id`，確保在 Google 聯絡人名片備註、週報附件、或 CRM 資料表中的原圖檢視 URL 永久有效！
@@ -162,10 +166,17 @@ sequenceDiagram
 ```text
 FollowLoop-Web/
 ├── index.html                     # 生產環境正式單頁 SPA
-├── FollowLoop-web-V4.8.html       # 最新版本化隔離驗收頁面 (遵守隔離開發天條)
 ├── manifest.json                  # PWA Manifest (配置 Web Share Target Level 2)
 ├── sw.js                          # Service Worker (Network-First 快取與分享攔截)
 ├── CNAME                          # GitHub Pages 自訂網域名稱 (report.foxlink.co.in)
+│
+├── history/                       # 🏛️ 歷史開發驗收檔案封存庫 (FollowLoop-web-V*.html)
+│   ├── FollowLoop-web-V4.4.html
+│   ├── FollowLoop-web-V4.5.html
+│   ├── FollowLoop-web-V4.6.html
+│   ├── FollowLoop-web-V4.7.html
+│   ├── FollowLoop-web-V4.8.html
+│   └── FollowLoop-web-V4.9.html
 │
 ├── css/                           # 純原生 CSS 樣式庫 (無 Tailwind / 零構建)
 │   ├── main.css                   # 全域排版、字型與基礎重設

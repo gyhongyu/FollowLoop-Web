@@ -15,11 +15,14 @@ const CONFIG = {
   
   // 3. Google Contacts 萬能網關 (google_contacts_gateway)
   CONTACTS_GATEWAY_URL: "https://script.google.com/macros/s/AKfycbyKnxJ2waOYny88XQH_65GagqVpcbBGVh7vCMwIT4JwowO2u__k6CUk1NDbTDrs-oqQ/exec",
+  FOXLINK_GROUP_RESOURCE_NAME: "contactGroups/32c2175b88f3d791", // 🔒 Foxlink 公務專屬人脈標籤 (SSOT)
+  CARDS_QUEUE_TAG: "CARDS_QUEUE", // 🪪 名片獨立 HITL 暫存佇列標籤
   
   SPREADSHEET_ID: "1YgwlA-f5Iq487-0FVU2ChOckNVLb3h1ejbrUNkUr4WQ",
   
   // Google Drive 資料夾 ID (SSOT)
   DRIVE_RAW_INPUTS_FOLDER_NAME: "FollowLoop_RawInputs",
+  DRIVE_PENDING_REVIEW_FOLDER_NAME: "Pending_Review", // 🔒 HITL 待審素材物理隔離箱 (防止二次自動提煉)
   DRIVE_ATTACHMENTS_FOLDER_ID: "1qSx-L6u6thXV_JY5oLu5gXg_58hVRAnX",
   DRIVE_ATTACHMENTS_FOLDER_NAME: "Projects_Attachments",
 

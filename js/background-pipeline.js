@@ -214,8 +214,12 @@ class BusinessCardHandler {
   getWorker() {
     if (!this.workerClient && typeof OpenRouterWorkerClient !== "undefined") {
       this.workerClient = new OpenRouterWorkerClient({
+        apiKey: typeof getOpenRouterApiKey === "function" ? getOpenRouterApiKey() : (window.CONFIG && CONFIG.OPENROUTER_DEFAULT_KEY),
         gasUrl: CONFIG.OPENROUTER_WORKER_GAS_URL
       });
+    } else if (this.workerClient) {
+      // 確保動態讀取最新 localStorage 或配置 key
+      this.workerClient.apiKey = typeof getOpenRouterApiKey === "function" ? getOpenRouterApiKey() : (window.CONFIG && CONFIG.OPENROUTER_DEFAULT_KEY);
     }
     return this.workerClient;
   }
@@ -297,41 +301,96 @@ class BusinessCardHandler {
         window.FL_AI_LOGGER.log("提煉結構化成果", `${cardInfo.name} | ${cardInfo.company || '無公司'} | ${cardInfo.phone || '無電話'}`);
       }
 
-      // 3. 組裝 Drive 原圖外鏈備註
-      const driveLinksNotes = fileList.map((f, idx) => {
+      // 3. 組裝 Drive 原圖外鏈與附件資訊
+      const attachmentLinks = fileList.map((f, idx) => {
         const label = idx === 0 ? "正面" : "背面";
-        return `名片原圖(${label}): https://drive.google.com/file/d/${f.id}/view`;
-      }).join(" | ");
-
-      let fullNotes = driveLinksNotes;
-      if (cardInfo.notes) fullNotes += ` | 備註: ${cardInfo.notes}`;
-      if (cardInfo.address) fullNotes += ` | 地址: ${cardInfo.address}`;
-
-      // 4. 寫入 Google 聯絡人 (調用 google_contacts_gateway 或 GAS ContactsApp)
-      if (window.FL_AI_LOGGER) {
-        window.FL_AI_LOGGER.log("同步 Google 聯絡人", `寫入聯絡人名冊: ${cardInfo.name}...`);
-      }
-
-      await this.saveToGoogleContacts({
-        name: cardInfo.name,
-        phone: cardInfo.phone || "",
-        company: cardInfo.company || "",
-        title: cardInfo.title || "",
-        email: cardInfo.email || "",
-        notes: fullNotes
+        return {
+          title: `名片圖檔 (${label})`,
+          url: `https://drive.google.com/file/d/${f.id}/view`,
+          id: f.id,
+          name: f.name
+        };
       });
 
-      // 5. 實體圖檔搬移歸檔至 Projects_Attachments
+      // 4. 🪪 攔截直接寫入通訊錄！改為寫入 CARDS_QUEUE 待審核中轉隊列 (0-Deploy SSOT)
       if (window.FL_AI_LOGGER) {
-        window.FL_AI_LOGGER.log("Drive 物理歸檔", `移出 Raw 箱至 Projects_Attachments...`);
+        window.FL_AI_LOGGER.log("呈報 HITL 待審隊列", `寫入名片待審隊列: ${cardInfo.name}...`);
       }
 
-      for (const file of fileList) {
-        await this.archiveFileToAttachments(file.id, context.token);
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const logId = `CARD_${ymd}_${Math.random().toString(36).substring(2, 6)}`;
+      const cleanTimestamp = now.toISOString();
+
+      const detailsPayload = JSON.stringify({
+        company: cardInfo.company || "",
+        email: cardInfo.email || "",
+        address: cardInfo.address || "",
+        notes: cardInfo.notes || ""
+      });
+
+      const safePhone = cardInfo.phone ? (String(cardInfo.phone).startsWith("+") ? `'${cardInfo.phone}` : String(cardInfo.phone)) : "";
+
+      // 100% 精確對齊 11 欄 RAW_FIELDS (project_tag 鎖定 CARDS_QUEUE)
+      const rawRow = [
+        logId,                                            // 0. A log_id
+        cleanTimestamp,                                   // 1. B timestamp
+        CONFIG.CARDS_QUEUE_TAG || "CARDS_QUEUE",          // 2. C project_tag (專屬隔離標籤)
+        cardInfo.name,                                    // 3. D entity_target (姓名)
+        cardInfo.title || "商務窗口",                      // 4. E target_purpose (職稱)
+        "Foxlink",                                        // 5. F our_advantages (預設公務標籤)
+        safePhone,                                        // 6. G action_taken (電話號碼，防 Google Sheet 公式報錯)
+        detailsPayload,                                   // 7. H update_log (公司/Email/地址/備註 JSON)
+        JSON.stringify(attachmentLinks),                  // 8. I attachment_links (原圖外鏈與 File ID)
+        "0.95",                                           // 9. J confidence_score
+        "PENDING_REVIEW"                                  // 10. K agent_status
+      ];
+
+      // ☁️ 持久化寫入雲端 Memory_Pool_Raw (CARDS_QUEUE)
+      if (typeof sendGasRequest === "function") {
+        await sendGasRequest("batch_append_raw", {
+          sheet: "Memory_Pool_Raw",
+          rows: [rawRow]
+        });
+      }
+
+      // 📦 【關鍵生命週期閉環】立即將檔案移入 Pending_Review/ 隔離箱，防止巡檢器重複提煉！
+      if (context.token) {
+        for (const file of fileList) {
+          try {
+            await this.moveToPendingReview(file.id, context.token, context.parentRawFolderId);
+          } catch (mErr) {
+            console.warn(`[BusinessCardHandler] 搬移檔案 ${file.name} 至 Pending_Review 略過或異常:`, mErr);
+          }
+        }
+      }
+
+      // ⚡ 即時注入前端 HITL 待審核佇列 (0ms 反應)
+      if (window.hitlReviewer) {
+        window.hitlReviewer.addCardDirectly({
+          entry_id: logId,
+          log_id: logId,
+          timestamp: cleanTimestamp,
+          source_type: "🪪 名片辨識",
+          is_card: true,
+          project_tag: CONFIG.CARDS_QUEUE_TAG || "CARDS_QUEUE",
+          name: cardInfo.name,
+          title: cardInfo.title || "商務窗口",
+          company: cardInfo.company || "",
+          phone: cardInfo.phone || "",
+          email: cardInfo.email || "",
+          address: cardInfo.address || "",
+          notes: cardInfo.notes || "",
+          attachment_links: JSON.stringify(attachmentLinks),
+          attachments: attachmentLinks,
+          confidence_score: "0.95",
+          status: "PENDING_REVIEW"
+        });
       }
 
       if (window.FL_AI_LOGGER) {
-        window.FL_AI_LOGGER.completeTask(`✅ 名片自動入庫成功: [${cardInfo.name} - ${cardInfo.company || ''}]`);
+        window.FL_AI_LOGGER.completeTask(`✅ 名片已呈報待審隊列: [${cardInfo.name} - ${cardInfo.company || ''}] (等待人類審核入庫)`);
       }
 
     } catch (err) {
@@ -427,7 +486,9 @@ class BusinessCardHandler {
     });
 
     const raw = typeof res === "string" ? res : (res.content || "");
-    const clean = raw.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    let clean = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) clean = match[0];
     return JSON.parse(clean);
   }
 
@@ -559,6 +620,63 @@ class BusinessCardHandler {
     if (!moveRes.ok) {
       throw new Error(`Drive 搬移檔案失敗: ${moveRes.statusText}`);
     }
+  }
+
+  /**
+   * 📦 將名片自待處理區搬移至 Pending_Review/ 隔離箱 (自動尋找或動態建立)
+   */
+  async moveToPendingReview(fileId, token, parentRawFolderId) {
+    if (!parentRawFolderId) return;
+
+    // 1. 尋找或自動建立 FollowLoop_RawInputs 下的 Pending_Review 子資料夾
+    let pendingFolderId = null;
+    const qPending = encodeURIComponent(`name = 'Pending_Review' and '${parentRawFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+    const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${qPending}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (searchRes.ok) {
+      const sData = await searchRes.json();
+      if (sData.files && sData.files.length > 0) {
+        pendingFolderId = sData.files[0].id;
+      } else {
+        // 動態建立 Pending_Review 子資料夾
+        const createRes = await fetch(`https://www.googleapis.com/drive/v3/files`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "Pending_Review",
+            mimeType: "application/vnd.google-apps.folder",
+            parents: [parentRawFolderId]
+          })
+        });
+        if (createRes.ok) {
+          const newFolder = await createRes.json();
+          pendingFolderId = newFolder.id;
+        }
+      }
+    }
+
+    if (!pendingFolderId) return;
+
+    // 2. 取得該檔案的現有 parents
+    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    let prevParents = "";
+    if (fileRes.ok) {
+      const fData = await fileRes.json();
+      if (fData.parents) prevParents = fData.parents.join(",");
+    }
+
+    // 3. 執行 PATCH 搬移至 Pending_Review (自 BusinessCards/ 拔除)
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${pendingFolderId}&removeParents=${prevParents}&fields=id,parents`, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    });
   }
 }
 
