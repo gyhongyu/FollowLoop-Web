@@ -227,19 +227,20 @@ const CONFIG = {
   // 1. Google Sheets 數據庫網關 (Universal_GAS_Gateway)
   GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbw8.../exec",
   
-  // 2. Google Drive 二階段直傳門閥
-  GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbyw.../exec",
+  // 2. Google Drive 二階段直傳與個人 5TB 檔案總帳網關
+  GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbxkvUs9uwru7L8yNkqWBmLh8wPwhpRTsTYyrTzYDnG518DBC-yvcAbamSO7-8ajiOfdgg/exec",
   
   // 3. Google Contacts 聯絡人網關
   CONTACTS_GATEWAY_URL: "https://script.google.com/macros/s/AKfycbyK.../exec",
   
   // 4. 線上試算表 ID
-  SPREADSHEET_ID: "YOUR_SPREADSHEET_ID",
+  SPREADSHEET_ID: "1YgwlA-f5Iq487-0FVU2ChOckNVLb3h1ejbrUNkUr4WQ",
+  FILES_REGISTRY_SPREADSHEET_ID: "1qOjDliZUI7LJeZIW854vf3CWOIlRJ1TdvVJRQIfGxmk", // 📁 個人檔案總帳表
   
-  // 5. Google Drive 資料夾 ID
-  DRIVE_RAW_INPUTS_FOLDER_NAME: "FollowLoop_RawInputs",
-  DRIVE_ATTACHMENTS_FOLDER_ID: "1qSx-L6u6thXV_JY5oLu5gXg_58hVRAnX",
-  DRIVE_ATTACHMENTS_FOLDER_NAME: "Projects_Attachments"
+  // 5. Google Drive 個人存儲池 (FollowLoop_Storage)
+  DRIVE_RAW_INPUTS_FOLDER_NAME: "FollowLoop_Storage",
+  DRIVE_ATTACHMENTS_FOLDER_ID: "1fH7PcFJC1tjoaD7A2vb7sv_iPGtY_uxV",
+  DRIVE_ATTACHMENTS_FOLDER_NAME: "FollowLoop_Storage"
 };
 ```
 

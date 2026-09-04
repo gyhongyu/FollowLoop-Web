@@ -244,29 +244,29 @@ class HitlReviewer {
       } catch (e) {}
     }
 
-    // 發送物理抹除請求 (試算表列刪除)
+    // 發送物理抹除請求 (試算表列刪除 - 僅處理業務主表 Memory_Pool_Raw，絕不觸發企業 Drive 權限)
     await sendGasRequest("review_action", {
       log_id: targetId,
       entry_id: targetId,
-      decision: "REJECT",
-      drive_file_id: driveFileId
+      decision: "REJECT"
     }).catch(e => {
       console.warn("[HitlReviewer] Reject 背景警示:", e);
     });
 
-    // 🗑️ 若有 Drive 附件 File ID，發送直接刪除請求 (徹底抹除 Pending_Review 隔離箱圖檔)
+    // 🗑️ 若有 Drive 附件 File ID，通知個人 Drive 網關物理移至垃圾桶並標記總帳 TRASHED
     (async () => {
       try {
-        const token = sessionStorage.getItem("FL_OAUTH_TOKEN") || localStorage.getItem("FL_OAUTH_TOKEN");
-        if (token && card && card.attachments && card.attachments.length > 0) {
+        const filesToTrash = new Set();
+        if (driveFileId) filesToTrash.add(driveFileId);
+        if (card && card.attachments && Array.isArray(card.attachments)) {
           for (const att of card.attachments) {
             const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
-            if (fid) {
-              await fetch(`https://www.googleapis.com/drive/v3/files/${fid}`, {
-                method: "DELETE",
-                headers: { "Authorization": `Bearer ${token}` }
-              }).catch(() => {});
-            }
+            if (fid) filesToTrash.add(fid);
+          }
+        }
+        if (typeof sendDriveGasRequest === "function") {
+          for (const fid of filesToTrash) {
+            await sendDriveGasRequest("delete_file", { file_id: fid }).catch(e => console.warn("[HitlReviewer] Drive 檔案刪除警告:", e));
           }
         }
       } catch (delErr) {
@@ -404,34 +404,20 @@ class HitlReviewer {
       throw new Error(`Google 通訊錄網關拒絕: ${contactJson.message || '未知錯誤'}`);
     }
 
-    // 4. 背景搬移 Drive 實體圖檔至 Projects_Attachments/BusinessCards/
+    // 4. 0 搬移不可變架構：背景更新個人檔案總帳狀態為 APPROVED (不搬移實體檔案，0 延遲，杜絕跨帳號 403 報錯)
     (async () => {
       try {
-        let token = sessionStorage.getItem("FL_OAUTH_TOKEN") || localStorage.getItem("FL_OAUTH_TOKEN");
-        if (!token && typeof sendDriveGasRequest === "function") {
-          const tRes = await sendDriveGasRequest("get_drive_token", {});
-          if (tRes && tRes.status === "success" && tRes.token) {
-            token = tRes.token;
-          }
-        }
-
-        if (token && card.attachments && card.attachments.length > 0) {
-          const pipeline = window.FL_BACKGROUND_PIPELINE;
-          const handler = pipeline && pipeline.handlers ? (pipeline.handlers.get ? pipeline.handlers.get("businesscards") : pipeline.handlers["BusinessCards"]) : null;
-          if (handler && typeof handler.archiveFileToAttachments === "function") {
-            for (const att of card.attachments) {
-              const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
-              if (fid) {
-                console.log(`[HitlReviewer] 正在將名片原圖 (${fid}) 歸檔至 Projects_Attachments/BusinessCards/...`);
-                await handler.archiveFileToAttachments(fid, token);
-              }
+        if (card.attachments && card.attachments.length > 0 && typeof sendDriveGasRequest === "function") {
+          for (const att of card.attachments) {
+            const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
+            if (fid) {
+              console.log(`[HitlReviewer] 0 搬移架構：更新個人檔案總帳 (${fid}) 狀態為 PROCESSED (已提煉素材)...`);
+              sendDriveGasRequest("update_file_status", { file_id: fid, status: "PROCESSED" }).catch(() => {});
             }
-          } else {
-            console.warn("[HitlReviewer] 找不到 BusinessCardHandler 實例，跳過實體圖檔歸檔");
           }
         }
       } catch (attErr) {
-        console.warn("[HitlReviewer] 名片實體圖檔搬移略過或異常:", attErr);
+        console.warn("[HitlReviewer] 更新個人檔案總帳狀態略過:", attErr);
       }
     })();
 

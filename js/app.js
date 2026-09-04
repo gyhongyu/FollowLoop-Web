@@ -781,7 +781,7 @@ function initIngestionModule() {
           previewInfo.innerHTML = `
             <div style="font-weight:700; color:var(--text-heading); margin-bottom:4px;">📄 檔案：${file.name} (${(file.size/1024).toFixed(1)} KB)</div>
             <div style="font-size:0.8rem; color:var(--text-muted);">${summaryText ? `提示：<b style="color:#818cf8;">${summaryText}</b>` : '請點選目標箱直接上傳：'}</div>
-            <div style="font-size:0.75rem; color:var(--text-subtle); margin-top:2px;">目標門閥：<b>FollowLoop_RawInputs/</b></div>
+            <div style="font-size:0.75rem; color:var(--text-subtle); margin-top:2px;">目標門閥：<b>${CONFIG.DRIVE_RAW_INPUTS_FOLDER_NAME || 'FollowLoop_Storage'}/</b></div>
           `;
         }
       }

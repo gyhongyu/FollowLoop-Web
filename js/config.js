@@ -10,8 +10,8 @@ const CONFIG = {
   // 1. Google Sheets 後端網關 (Universal_GAS_Gateway v5.0 - Strict SSOT)
   GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbw8FVXfcK9Bi9bjH6DVP0RDaP2hWwTFtiGVKoo2pNO9XA8GpA1FMOudW3Hjty9SajtR/exec",
   
-  // 2. Google Drive 二階段大檔直傳專用 (模組一 ⚡ 直傳門閥)
-  GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbywZiZgUu1pqrbQp43PDsiVQIrCE7fDvwTtdGd6_BaOzeozCX3DDJTg9iTWl1_8EXyw_g/exec",
+  // 2. Google Drive 二階段大檔直傳與個人檔案總帳專用網關 (gyhongyu@gmail.com 5TB)
+  GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbxkvUs9uwru7L8yNkqWBmLh8wPwhpRTsTYyrTzYDnG518DBC-yvcAbamSO7-8ajiOfdgg/exec",
   
   // 3. Google Contacts 萬能網關 (google_contacts_gateway)
   CONTACTS_GATEWAY_URL: "https://script.google.com/macros/s/AKfycbyKnxJ2waOYny88XQH_65GagqVpcbBGVh7vCMwIT4JwowO2u__k6CUk1NDbTDrs-oqQ/exec",
@@ -19,12 +19,12 @@ const CONFIG = {
   CARDS_QUEUE_TAG: "CARDS_QUEUE", // 🪪 名片獨立 HITL 暫存佇列標籤
   
   SPREADSHEET_ID: "1YgwlA-f5Iq487-0FVU2ChOckNVLb3h1ejbrUNkUr4WQ",
+  FILES_REGISTRY_SPREADSHEET_ID: "1qOjDliZUI7LJeZIW854vf3CWOIlRJ1TdvVJRQIfGxmk", // 📁 個人檔案總帳表 (FollowLoop_google_drive_files)
   
-  // Google Drive 資料夾 ID (SSOT)
-  DRIVE_RAW_INPUTS_FOLDER_NAME: "FollowLoop_RawInputs",
-  DRIVE_PENDING_REVIEW_FOLDER_NAME: "Pending_Review", // 🔒 HITL 待審素材物理隔離箱 (防止二次自動提煉)
-  DRIVE_ATTACHMENTS_FOLDER_ID: "1qSx-L6u6thXV_JY5oLu5gXg_58hVRAnX",
-  DRIVE_ATTACHMENTS_FOLDER_NAME: "Projects_Attachments",
+  // Google Drive 個人存儲池 (FollowLoop_Storage)
+  DRIVE_RAW_INPUTS_FOLDER_NAME: "FollowLoop_Storage",
+  DRIVE_ATTACHMENTS_FOLDER_ID: "1fH7PcFJC1tjoaD7A2vb7sv_iPGtY_uxV",
+  DRIVE_ATTACHMENTS_FOLDER_NAME: "FollowLoop_Storage",
 
   // 🗂️ 全域唯一 素材物理場景分類契約 (RAW_SCENE_CATEGORIES SSOT)
   RAW_SCENE_CATEGORIES: {

@@ -19,7 +19,43 @@ class BackgroundWorkerPipeline {
     this.pollingInterval = null;
     this.pollIntervalMs = 60000; // 預設 60 秒巡檢一次
     this.processingFiles = new Set(); // 正在處理中的 File ID 記憶體鎖
+    this.processedFiles = new Set(); // ⚡ 0ms 記憶體已處理查重集合 (0-Relocation SSOT)
     this.cooldownFiles = new Map(); // fileId -> expireTimestamp (低置信度/失敗冷卻 10 分鐘，防死循環空耗 Token)
+  }
+
+  /**
+   * 🛡️ 0ms 記憶體查重：比對檔案是否已在資料庫或審核佇列中，杜絕重複提煉
+   */
+  isFileAlreadyProcessed(fileId) {
+    if (!fileId) return false;
+    if (this.processedFiles.has(fileId)) return true;
+
+    // 1. 比對前端記憶體總帳 (window.liveView.lastRawData) 的 attachment_links 欄位
+    if (window.liveView && Array.isArray(window.liveView.lastRawData)) {
+      for (let i = 1; i < window.liveView.lastRawData.length; i++) {
+        const attStr = String(window.liveView.lastRawData[i][8] || "");
+        if (attStr.includes(fileId)) {
+          this.processedFiles.add(fileId);
+          return true;
+        }
+      }
+    }
+
+    // 2. 比對待審核佇列 (window.hitlReviewer.pendingCards)
+    if (window.hitlReviewer && Array.isArray(window.hitlReviewer.pendingCards)) {
+      for (const card of window.hitlReviewer.pendingCards) {
+        if (card.attachments && Array.isArray(card.attachments)) {
+          for (const att of card.attachments) {
+            if (att.id === fileId || (att.url && att.url.includes(fileId))) {
+              this.processedFiles.add(fileId);
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -166,6 +202,7 @@ class BackgroundWorkerPipeline {
     const now = Date.now();
     const isFileAvailable = (f) => {
       if (this.processingFiles.has(f.id)) return false;
+      if (this.isFileAlreadyProcessed(f.id)) return false; // ⚡ 0ms 查重，已提煉過則跳過
       const cooldownUntil = this.cooldownFiles.get(f.id);
       if (cooldownUntil && cooldownUntil > now) {
         return false;
@@ -356,14 +393,19 @@ class BusinessCardHandler {
         });
       }
 
-      // 📦 【關鍵生命週期閉環】立即將檔案移入 Pending_Review/ 隔離箱，防止巡檢器重複提煉！
-      if (context.token) {
-        for (const file of fileList) {
-          try {
-            await this.moveToPendingReview(file.id, context.token, context.parentRawFolderId);
-          } catch (mErr) {
-            console.warn(`[BusinessCardHandler] 搬移檔案 ${file.name} 至 Pending_Review 略過或異常:`, mErr);
-          }
+      // 📦 【0 搬移不可變架構】不再搬移實體檔案，直接在記憶體鎖定並登記個人檔案總帳！
+      for (const file of fileList) {
+        if (this.pipeline && this.pipeline.processedFiles) {
+          this.pipeline.processedFiles.add(file.id);
+        }
+        if (typeof sendDriveGasRequest === "function") {
+          sendDriveGasRequest("register_file", {
+            file_id: file.id,
+            filename: file.name,
+            category: "BusinessCards",
+            retention: "PERMANENT",
+            status: "PENDING"
+          }).catch(rErr => console.warn(`[BusinessCardHandler] 登記個人檔案總帳略過:`, rErr));
         }
       }
 
@@ -639,134 +681,25 @@ class BusinessCardHandler {
   }
 
   /**
-   * 將 Drive 檔案自 Raw 箱搬移至 Projects_Attachments/BusinessCards/ (無損 PATCH parents)
+   * 🏛️ 0 搬移不可變存儲：審核通過不搬移實體檔案，更新個人檔案總帳狀態
    */
   async archiveFileToAttachments(fileId, token) {
-    // 1. 取得 Projects_Attachments 根資料夾 ID
-    const targetFolderName = CONFIG.DRIVE_ATTACHMENTS_FOLDER_NAME || "Projects_Attachments";
-    const qTarget = encodeURIComponent(`name = '${targetFolderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
-    const targetRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${qTarget}`, {
-      headers: { "Authorization": `Bearer ${token}` }
-    });
-
-    let rootAttachmentsId = CONFIG.DRIVE_ATTACHMENTS_FOLDER_ID;
-    if (targetRes.ok) {
-      const targetData = await targetRes.json();
-      if (targetData.files && targetData.files.length > 0) {
-        rootAttachmentsId = targetData.files[0].id;
-      }
+    console.log(`[BusinessCardHandler] 0 搬移架構生效：檔案 (${fileId}) 永久留存原處，更新個人檔案總帳為 APPROVED。`);
+    if (typeof sendDriveGasRequest === "function") {
+      sendDriveGasRequest("update_file_status", {
+        file_id: fileId,
+        status: "APPROVED"
+      }).catch(() => {});
     }
-
-    // 2. 尋找或建立 Projects_Attachments 下的 BusinessCards 子資料夾
-    let finalTargetId = rootAttachmentsId;
-    if (rootAttachmentsId) {
-      const qSub = encodeURIComponent(`name = 'BusinessCards' and '${rootAttachmentsId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
-      const subRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${qSub}`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (subRes.ok) {
-        const subData = await subRes.json();
-        if (subData.files && subData.files.length > 0) {
-          finalTargetId = subData.files[0].id;
-        } else {
-          // 建立 BusinessCards 子資料夾
-          const createRes = await fetch(`https://www.googleapis.com/drive/v3/files`, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: "BusinessCards",
-              mimeType: "application/vnd.google-apps.folder",
-              parents: [rootAttachmentsId]
-            })
-          });
-          if (createRes.ok) {
-            const newFolder = await createRes.json();
-            finalTargetId = newFolder.id;
-          }
-        }
-      }
-    }
-
-    // 3. 取得檔案現有 parents
-    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents`, {
-      headers: { "Authorization": `Bearer ${token}` }
-    });
-
-    let prevParents = "";
-    if (fileRes.ok) {
-      const fileData = await fileRes.json();
-      if (fileData.parents) prevParents = fileData.parents.join(",");
-    }
-
-    // 4. 執行 PATCH 搬移至 BusinessCards 子資料夾
-    const moveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${finalTargetId}&removeParents=${prevParents}&fields=id,parents`, {
-      method: "PATCH",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
-    });
-
-    if (!moveRes.ok) {
-      throw new Error(`Drive 搬移檔案失敗: ${moveRes.statusText}`);
-    }
+    return;
   }
 
   /**
-   * 📦 將名片自待處理區搬移至 Pending_Review/ 隔離箱 (自動尋找或動態建立)
+   * 🏛️ 0 搬移不可變存儲：檔案終生不搬家，徹底消滅 Google Drive 搬移逾時與死循環
    */
   async moveToPendingReview(fileId, token, parentRawFolderId) {
-    if (!parentRawFolderId) return;
-
-    // 1. 尋找或自動建立 FollowLoop_RawInputs 下的 Pending_Review 子資料夾
-    let pendingFolderId = null;
-    const qPending = encodeURIComponent(`name = 'Pending_Review' and '${parentRawFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
-    const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${qPending}`, {
-      headers: { "Authorization": `Bearer ${token}` }
-    });
-
-    if (searchRes.ok) {
-      const sData = await searchRes.json();
-      if (sData.files && sData.files.length > 0) {
-        pendingFolderId = sData.files[0].id;
-      } else {
-        // 動態建立 Pending_Review 子資料夾
-        const createRes = await fetch(`https://www.googleapis.com/drive/v3/files`, {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: "Pending_Review",
-            mimeType: "application/vnd.google-apps.folder",
-            parents: [parentRawFolderId]
-          })
-        });
-        if (createRes.ok) {
-          const newFolder = await createRes.json();
-          pendingFolderId = newFolder.id;
-        }
-      }
-    }
-
-    if (!pendingFolderId) return;
-
-    // 2. 取得該檔案的現有 parents
-    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents`, {
-      headers: { "Authorization": `Bearer ${token}` }
-    });
-    let prevParents = "";
-    if (fileRes.ok) {
-      const fData = await fileRes.json();
-      if (fData.parents) prevParents = fData.parents.join(",");
-    }
-
-    // 3. 執行 PATCH 搬移至 Pending_Review (自 BusinessCards/ 拔除)
-    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${pendingFolderId}&removeParents=${prevParents}&fields=id,parents`, {
-      method: "PATCH",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      }
-    });
+    console.log(`[BusinessCardHandler] 0 搬移架構生效：檔案 (${fileId}) 留存原處，由資料庫欄位驅動狀態。`);
+    return;
   }
 }
 

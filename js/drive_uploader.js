@@ -33,8 +33,8 @@ class DriveUploader {
       return this.subfolderCache[folderName];
     }
 
-    // 嘗試從 localStorage 快取中讀取 (提升離線與極速體驗)
-    const storageKey = `fl_drive_folder_${folderName}`;
+    // 嘗試從 localStorage 快取中讀取 (以 parentRawFolderId 隔離命名空間，徹底杜絕跨帳號資料夾污染)
+    const storageKey = `fl_drive_folder_${parentRawFolderId}_${folderName}`;
     const cachedId = localStorage.getItem(storageKey);
     if (cachedId) {
       this.subfolderCache[folderName] = cachedId;
@@ -210,13 +210,28 @@ class DriveUploader {
         if (xhr.status === 200 || xhr.status === 201) {
           try {
             const resData = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+            const uploadedFileId = resData.id || "UPLOADED_DIRECTLY";
+            const fileUrl = resData.webViewLink || (uploadedFileId ? `https://drive.google.com/file/d/${uploadedFileId}/view` : "");
+
+            // ⚡ 0 搬移架構：直傳完成後自動登記至個人檔案總帳 (FollowLoop_google_drive_files)
+            if (uploadedFileId && uploadedFileId !== "UPLOADED_DIRECTLY" && typeof sendDriveGasRequest === "function") {
+              sendDriveGasRequest("register_file", {
+                file_id: uploadedFileId,
+                filename: file.name,
+                category: categoryKey || "Unclassified",
+                retention: (categoryKey === "VOICE_MEMOS" ? "TEMP" : "PERMANENT"),
+                status: "PENDING",
+                drive_url: fileUrl
+              }).catch(regErr => console.warn("[DriveUploader] 自動登記個人總帳略過:", regErr));
+            }
+
             resolve({
               status: "success",
-              file_id: resData.id || "UPLOADED_DIRECTLY",
+              file_id: uploadedFileId,
               filename: file.name,
               size: file.size,
               notes: notes,
-              raw_url: resData.webViewLink || ""
+              raw_url: fileUrl
             });
           } catch (err) {
             resolve({
