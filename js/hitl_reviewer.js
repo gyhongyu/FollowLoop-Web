@@ -99,6 +99,7 @@ class HitlReviewer {
                 title: row[4] || "",
                 group_tag: row[5] || "Foxlink",
                 phone: cleanPhone,
+                phones: details.phones || [],
                 company: details.company || "",
                 email: details.email || "",
                 address: details.address || "",
@@ -304,6 +305,37 @@ class HitlReviewer {
 
     console.log(`[HitlReviewer] 🪪 批准名片入庫: ${finalData.name} (${finalData.company})`);
 
+    // 0. 規範化解析與清洗電話號碼 (VCF / E.164 標準)
+    let phonesPayload = [];
+    if (finalData.phones && Array.isArray(finalData.phones) && finalData.phones.length > 0) {
+      phonesPayload = finalData.phones.map(p => typeof p === "string" ? { value: p, type: "mobile" } : { value: p.value || p.number, type: p.type || "mobile" });
+    } else if (finalData.phone) {
+      // 容錯拆解帶斜線或分號的電話字串
+      const rawParts = String(finalData.phone).split(/[\/\n;,|]+/).map(s => s.trim()).filter(Boolean);
+      phonesPayload = rawParts.map(p => {
+        const isWork = /office|work|tel|市話|公司|020-|080-/i.test(p);
+        return { value: p, type: isWork ? "work" : "mobile" };
+      });
+    }
+
+    // 格式化電話：補齊國碼防呆
+    phonesPayload = phonesPayload.map(p => {
+      let v = p.value.trim();
+      const pureDigits = v.replace(/[^\d]/g, "");
+      if (!v.startsWith("+")) {
+        if (pureDigits.length === 10 && /^[6-9]/.test(pureDigits)) {
+          v = `+91 ${pureDigits.substring(0, 5)} ${pureDigits.substring(5)}`;
+        } else if (pureDigits.length === 10 && pureDigits.startsWith("0")) {
+          v = `+91 ${pureDigits.substring(1)}`;
+        } else if (pureDigits.length === 10 && pureDigits.startsWith("09")) {
+          v = `+886 ${pureDigits.substring(1)}`;
+        }
+      }
+      return { value: v, type: p.type || "mobile" };
+    });
+
+    const primaryPhoneStr = phonesPayload.length > 0 ? phonesPayload[0].value : (finalData.phone || "");
+
     // 1. 組裝 Google Drive 原圖外鏈至備註中
     let driveUrlNotes = "";
     if (card.attachments && card.attachments.length > 0) {
@@ -320,16 +352,23 @@ class HitlReviewer {
       } catch (e) {}
     }
 
+    // 淨化備註：剔除電話複述垃圾
+    let cleanNotes = (finalData.notes || "")
+      .replace(/(辦公室電話|行動電話|電話|手機|TEL|Phone|Mobile|Office)[\s:：]*[+\d\s\-\/]+/gi, "")
+      .replace(/^[、，,.\s]+|[、，,.\s]+$/g, "")
+      .trim();
+
     let fullNotes = "";
-    if (finalData.notes) fullNotes += `備註: ${finalData.notes}\n`;
+    if (cleanNotes) fullNotes += `備註: ${cleanNotes}\n`;
     if (finalData.address) fullNotes += `地址: ${finalData.address}\n`;
     if (driveUrlNotes) fullNotes += `📎 雲端檔案: ${driveUrlNotes}`;
     fullNotes = fullNotes.trim();
 
-    // 2. 構建 People API Payload
+    // 2. 構建 People API Payload (支援 phones 陣列與 primaryPhone)
     const contactPayload = {
       name: finalData.name,
-      phone: finalData.phone || "",
+      phone: primaryPhoneStr,
+      phones: phonesPayload,
       company: finalData.company || "",
       title: finalData.title || "",
       email: finalData.email || "",
@@ -377,14 +416,18 @@ class HitlReviewer {
         }
 
         if (token && card.attachments && card.attachments.length > 0) {
-          const handler = window.FL_BACKGROUND_PIPELINE && window.FL_BACKGROUND_PIPELINE.handlers && window.FL_BACKGROUND_PIPELINE.handlers["BusinessCards"];
+          const pipeline = window.FL_BACKGROUND_PIPELINE;
+          const handler = pipeline && pipeline.handlers ? (pipeline.handlers.get ? pipeline.handlers.get("businesscards") : pipeline.handlers["BusinessCards"]) : null;
           if (handler && typeof handler.archiveFileToAttachments === "function") {
             for (const att of card.attachments) {
               const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
               if (fid) {
+                console.log(`[HitlReviewer] 正在將名片原圖 (${fid}) 歸檔至 Projects_Attachments/BusinessCards/...`);
                 await handler.archiveFileToAttachments(fid, token);
               }
             }
+          } else {
+            console.warn("[HitlReviewer] 找不到 BusinessCardHandler 實例，跳過實體圖檔歸檔");
           }
         }
       } catch (attErr) {

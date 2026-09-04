@@ -1,8 +1,8 @@
-// FollowLoop PWA Service Worker (V4.9.0 - Business Card Dedicated HITL Gate & Double Side Auto Merge)
+// FollowLoop PWA Service Worker (V4.9.1 - Universal Multi-Format Card Merge & Batch Share Target Gate)
 // 快取策略：靜態資源 Network-First (網路優先+快取備援)，API / GAS 請求 Network-Only (完全直通)
 // 支援 Web Share Target Level 2 檔案接收並安全中轉至 IndexedDB
 
-const CACHE_NAME = 'followloop-pwa-v4.9.0';
+const CACHE_NAME = 'followloop-pwa-v4.9.1';
 
 // 預快取靜態資源清單
 const STATIC_ASSETS = [
@@ -23,7 +23,7 @@ const STATIC_ASSETS = [
   './js/live_view.js?v=4.9.0',
   './js/project_manager.js?v=4.9.0',
   './js/auth.js?v=4.9.0',
-  './js/app.js?v=4.9.0',
+  './js/app.js?v=4.9.1',
   './js/background-pipeline.js?v=4.9.0',
   './img/icons/icon-192.png',
   './img/icons/icon-512.png',

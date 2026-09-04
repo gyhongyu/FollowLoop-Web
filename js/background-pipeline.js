@@ -327,7 +327,8 @@ class BusinessCardHandler {
         company: cardInfo.company || "",
         email: cardInfo.email || "",
         address: cardInfo.address || "",
-        notes: cardInfo.notes || ""
+        notes: cardInfo.notes || "",
+        phones: cardInfo.phones || []
       });
 
       const safePhone = cardInfo.phone ? (String(cardInfo.phone).startsWith("+") ? `'${cardInfo.phone}` : String(cardInfo.phone)) : "";
@@ -341,7 +342,7 @@ class BusinessCardHandler {
         cardInfo.title || "商務窗口",                      // 4. E target_purpose (職稱)
         "Foxlink",                                        // 5. F our_advantages (預設公務標籤)
         safePhone,                                        // 6. G action_taken (電話號碼，防 Google Sheet 公式報錯)
-        detailsPayload,                                   // 7. H update_log (公司/Email/地址/備註 JSON)
+        detailsPayload,                                   // 7. H update_log (公司/Email/地址/備註/電話陣列 JSON)
         JSON.stringify(attachmentLinks),                  // 8. I attachment_links (原圖外鏈與 File ID)
         "0.95",                                           // 9. J confidence_score
         "PENDING_REVIEW"                                  // 10. K agent_status
@@ -379,6 +380,7 @@ class BusinessCardHandler {
           title: cardInfo.title || "商務窗口",
           company: cardInfo.company || "",
           phone: cardInfo.phone || "",
+          phones: cardInfo.phones || [],
           email: cardInfo.email || "",
           address: cardInfo.address || "",
           notes: cardInfo.notes || "",
@@ -454,21 +456,94 @@ class BusinessCardHandler {
   }
 
   /**
-   * 調用 Vision 大模型解析名片
+   * 📞 內部輔助：規範化清洗名片電話號碼 (符合 VCF / E.164 標準)
+   * 支援字串拆解 (斜線/分號/換行/逗號)、印度/台灣國碼補齊、過濾非數字垃圾
+   * @param {string|Array} rawPhones 
+   * @returns {Array<{value: string, type: string}>}
+   */
+  normalizeCardPhones(rawPhones) {
+    const list = [];
+    if (!rawPhones) return list;
+
+    let items = [];
+    if (Array.isArray(rawPhones)) {
+      items = rawPhones;
+    } else if (typeof rawPhones === "string") {
+      items = rawPhones.split(/[\/\n;,|]+/).map(s => s.trim()).filter(Boolean);
+    }
+
+    items.forEach((item) => {
+      let val = "";
+      let type = "mobile";
+
+      if (typeof item === "object" && item !== null) {
+        val = (item.value || item.number || "").trim();
+        type = item.type || "mobile";
+      } else {
+        val = String(item).trim();
+      }
+
+      if (!val) return;
+
+      // 提取純數字與 + 號
+      const cleanDigits = val.replace(/[^\d+]/g, "");
+      if (cleanDigits.replace(/\D/g, "").length < 6) return; // 長度不足忽略
+
+      // 智慧補齊國碼：
+      // 1. 若為 10 碼且以 6, 7, 8, 9 開頭 (印度手機) -> 補 +91
+      // 2. 若為 0 開頭且為 10 碼 (例如 020-27293605 普奈市話) -> 轉為 +91 20 27293605
+      let formatted = val;
+      const pureDigits = cleanDigits.replace(/\D/g, "");
+
+      if (!val.startsWith("+")) {
+        if (pureDigits.length === 10 && /^[6-9]/.test(pureDigits)) {
+          formatted = `+91 ${pureDigits.substring(0, 5)} ${pureDigits.substring(5)}`;
+          type = "mobile";
+        } else if (pureDigits.length === 10 && pureDigits.startsWith("0")) {
+          // 移除開頭 0 補 +91
+          formatted = `+91 ${pureDigits.substring(1)}`;
+          type = "work";
+        } else if (pureDigits.length === 10 && pureDigits.startsWith("09")) {
+          // 台灣手機 09xx -> +886 9xx
+          formatted = `+886 ${pureDigits.substring(1)}`;
+          type = "mobile";
+        }
+      }
+
+      // 判斷 type
+      if (/office|work|tel|phone|市話|公司|分機/i.test(val) || formatted.includes("020-") || formatted.includes("080-")) {
+        type = "work";
+      }
+
+      list.push({ value: formatted, type: type });
+    });
+
+    return list;
+  }
+
+  /**
+   * 調用 Vision 大模型解析名片 (嚴格對齊 VCF 標準結構)
    */
   async extractCardInfo(images) {
     const worker = this.getWorker();
-    const prompt = `請詳細辨識圖片中的名片內容，並嚴格提取為純 JSON 物件：
+    const prompt = `請詳細辨識圖片中的名片內容，並嚴格提取為符合 VCF / 通訊錄標準的純 JSON 物件：
 {
-  "name": "聯絡人姓名 (若有多人請取主要名片持有人)",
-  "company": "公司或機構名稱",
-  "title": "職稱 / 頭銜",
-  "phone": "電話或手機號碼 (包含國碼如 +91 或 +886)",
+  "name": "聯絡人姓名 (若有多人請取主要持有人，去除先生/小姐等尊稱)",
+  "company": "公司或機構全銜",
+  "title": "職稱 / 頭銜 (如 Director / VP / SCM Manager)",
+  "phones": [
+    { "type": "mobile", "value": "+91 98902 66646" },
+    { "type": "work", "value": "+91 20 2729 3605" }
+  ],
+  "phone": "主要聯繫電話 (E.164 帶國碼，如 +91 98902 66646，嚴禁用斜線串接多個號碼)",
   "email": "電子郵件信箱",
-  "address": "公司地址 / 據點",
-  "notes": "業務範疇 / 服務項目 / 統編或重要備註"
+  "address": "公司完整實體地址",
+  "notes": "業務服務範疇或重要業務標語 (⚠️ 嚴禁在此重述電話、手機、姓名或地址等重複垃圾資訊！)"
 }
-注意：若為正反兩面，請將兩面資訊融合提取。必須直接輸出純 JSON，嚴禁包含 markdown 標籤。`;
+注意：
+1. 若為正反兩面，請融合提取。
+2. 多支電話請務必拆入 "phones" 陣列中，絕對禁止在單一字串中用斜線 "/" 拼湊！
+3. 必須直接輸出純 JSON，嚴禁包含 markdown 標籤或任何引導文字。`;
 
     const userContent = [{ type: "text", text: prompt }];
     images.forEach(img => {
@@ -489,7 +564,22 @@ class BusinessCardHandler {
     let clean = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
     const match = clean.match(/\{[\s\S]*\}/);
     if (match) clean = match[0];
-    return JSON.parse(clean);
+    const parsed = JSON.parse(clean);
+
+    // 🛡️ VCF 標準清洗與多電話歸一化
+    const normalizedPhones = this.normalizeCardPhones(parsed.phones || parsed.phone);
+    parsed.phones = normalizedPhones;
+    parsed.phone = normalizedPhones.length > 0 ? normalizedPhones[0].value : (parsed.phone || "");
+
+    // 剔除 notes 中殘留的電話複述垃圾
+    if (parsed.notes) {
+      parsed.notes = parsed.notes
+        .replace(/(辦公室電話|行動電話|電話|手機|TEL|Phone|Mobile|Office)[\s:：]*[+\d\s\-\/]+/gi, "")
+        .replace(/^[、，,.\s]+|[、，,.\s]+$/g, "")
+        .trim();
+    }
+
+    return parsed;
   }
 
   /**

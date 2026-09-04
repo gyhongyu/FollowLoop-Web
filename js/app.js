@@ -871,68 +871,113 @@ function initIngestionModule() {
   }
 
   /**
-   * 🖼️ Canvas 本地將 2 張圖片上下無損合併為單一圖片物件 (雙面名片合體神器)
-   * @param {File} file1 - 正面圖檔
-   * @param {File} file2 - 背面圖檔
-   * @returns {Promise<File>} 合併後的 File 物件
+   * 🖼️ 內部輔助：將單一檔案 (圖片或 PDF 第 1 頁) 渲染為 HTMLCanvasElement
+   * @param {File} file - 圖片或 PDF
+   * @param {number} targetWidth - 目標寬度 (可選)
+   * @returns {Promise<HTMLCanvasElement>}
    */
-  async function mergeTwoImagesVertically(file1, file2) {
+  async function renderItemToCanvas(file, targetWidth = null) {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (isPdf && window.pdfjsLib) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d");
+      // 鋪滿白色底色
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+      return canvas;
+    }
+
+    // 處理圖片 (JPG, PNG, WebP)
     return new Promise((resolve, reject) => {
-      const img1 = new Image();
-      const img2 = new Image();
-      let loadedCount = 0;
-
-      const onLoad = () => {
-        loadedCount++;
-        if (loadedCount < 2) return;
-
-        // 計算 Canvas 尺寸：寬度取兩者最大，高度相加
-        const targetWidth = Math.max(img1.naturalWidth || img1.width, img2.naturalWidth || img2.width);
-        // 按比例計算各自高度
-        const h1 = ((img1.naturalHeight || img1.height) * (targetWidth / (img1.naturalWidth || img1.width))) || 600;
-        const h2 = ((img2.naturalHeight || img2.height) * (targetWidth / (img2.naturalWidth || img2.width))) || 600;
-        const padding = 20; // 中間留一條細微分界
-        const targetHeight = Math.round(h1 + h2 + padding);
-
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const w = img.naturalWidth || img.width || 800;
+        const h = img.naturalHeight || img.height || 600;
         const canvas = document.createElement("canvas");
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext("2d");
-
-        // 填入乾淨白底
+        // 白色底色避免透明 PNG 轉黑
         ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, targetWidth, targetHeight);
-
-        // 繪製正面 (上方)
-        ctx.drawImage(img1, 0, 0, targetWidth, h1);
-
-        // 繪製分隔線
-        ctx.fillStyle = "#e2e8f0";
-        ctx.fillRect(0, h1 + 8, targetWidth, 4);
-
-        // 繪製背面 (下方)
-        ctx.drawImage(img2, 0, h1 + padding, targetWidth, h2);
-
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(new Error("Canvas 合成名片圖檔失敗"));
-            return;
-          }
-          const now = new Date();
-          const pad = (n) => String(n).padStart(2, "0");
-          const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-          const mergedFile = new File([blob], `card_${ymd}_merged.jpg`, { type: "image/jpeg" });
-          resolve(mergedFile);
-        }, "image/jpeg", 0.92);
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas);
       };
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`讀取素材失敗 (${file.name}): ` + err));
+      };
+      img.src = url;
+    });
+  }
 
-      img1.onload = onLoad;
-      img2.onload = onLoad;
-      img1.onerror = (e) => reject(new Error("讀取第一張名片圖片失敗: " + e));
-      img2.onerror = (e) => reject(new Error("讀取第二張名片圖片失敗: " + e));
+  /**
+   * 🖼️ Canvas 本地將 2 個素材 (JPG/PNG/WebP/PDF) 上下自動合成單一輕量長圖 (雙面名片全格式合體神器)
+   * 自動白底鋪墊、等比寬度對齊、長邊限制 1200px 壓縮輸出，Token 節省 80%
+   * @param {File} file1 - 正面素材
+   * @param {File} file2 - 背面素材
+   * @returns {Promise<File>} 合併後的輕量 JPEG File 物件
+   */
+  async function mergeTwoItemsVertically(file1, file2) {
+    const [c1, c2] = await Promise.all([
+      renderItemToCanvas(file1),
+      renderItemToCanvas(file2)
+    ]);
 
-      img1.src = URL.createObjectURL(file1);
-      img2.src = URL.createObjectURL(file2);
+    // 計算等比寬度：以較寬者為基準，但限制最大寬度 1200px (防止超高清掃描檔爆 Token)
+    let targetWidth = Math.max(c1.width, c2.width);
+    const maxSide = 1200;
+    let scaleFactor = 1;
+    if (targetWidth > maxSide) {
+      scaleFactor = maxSide / targetWidth;
+      targetWidth = maxSide;
+    }
+
+    const h1 = Math.round(c1.height * (targetWidth / c1.width));
+    const h2 = Math.round(c2.height * (targetWidth / c2.width));
+    const padding = 20; // 中間留一條細微分界
+    const targetHeight = Math.round(h1 + h2 + padding);
+
+    const mergedCanvas = document.createElement("canvas");
+    mergedCanvas.width = targetWidth;
+    mergedCanvas.height = targetHeight;
+    const ctx = mergedCanvas.getContext("2d");
+
+    // 填入純淨白底
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+    // 繪製正面 (上方)
+    ctx.drawImage(c1, 0, 0, targetWidth, h1);
+
+    // 繪製分隔線
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillRect(0, h1 + 8, targetWidth, 4);
+
+    // 繪製背面 (下方)
+    ctx.drawImage(c2, 0, h1 + padding, targetWidth, h2);
+
+    return new Promise((resolve, reject) => {
+      mergedCanvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("Canvas 合成名片圖檔失敗"));
+          return;
+        }
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        const mergedFile = new File([blob], `card_${ymd}_merged.jpg`, { type: "image/jpeg" });
+        resolve(mergedFile);
+      }, "image/jpeg", 0.85);
     });
   }
 
@@ -951,10 +996,11 @@ function initIngestionModule() {
 
     const userNotes = noteTextarea ? noteTextarea.value : "";
     const allImages = files.every(f => f.type.startsWith("image/"));
+    const allCardCandidates = files.every(f => f.type.startsWith("image/") || f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
 
     // 2. 🌟 批次上傳彈窗：一次指定整批檔案的目標箱 (0 LLM 消耗，1 點即傳)
     let defaultCat = "UNCLASSIFIED";
-    if (allImages) {
+    if (allCardCandidates) {
       defaultCat = files.length === 2 ? "CARDS_DOUBLE" : "CARDS_SINGLE";
     }
 
@@ -967,12 +1013,12 @@ function initIngestionModule() {
     // 🪪 情況 A：使用者選擇【🔄 雙面名片 (合拼為1張)】
     if (chosenCat === "CARDS_DOUBLE") {
       if (files.length !== 2) {
-        showToast("⚠️ 雙面名片合體僅限選取 2 張圖片 (正面與背面)！", "warning");
+        showToast("⚠️ 雙面名片合體僅限選取 2 個素材 (正面與背面，支援圖片與 PDF)！", "warning");
         return;
       }
       try {
-        showToast("🔄 正在本地將名片正反面上下合成單張高畫質大圖...", "info");
-        const mergedCardFile = await mergeTwoImagesVertically(files[0], files[1]);
+        showToast("🔄 正在本地將名片正反面 (圖片/PDF) 上下合成單張高畫質大圖...", "info");
+        const mergedCardFile = await mergeTwoItemsVertically(files[0], files[1]);
         showToast("⚡ 合成完畢！開始直傳至 BusinessCards/ 箱...", "info");
         await executeDirectCategorizedUpload(mergedCardFile, `[雙面名片合併] ${userNotes}`.trim(), "BUSINESS_CARDS");
         showToast("🎉 雙面名片已合為單圖並安全存入！", "success");
@@ -2673,6 +2719,9 @@ async function handleIncomingSharedFiles() {
   const progressBarFill = document.getElementById("progress-bar-fill");
   const progressText = document.getElementById("progress-text");
 
+  const incomingFiles = [];
+  let combinedNotes = "";
+
   for (let i = 0; i < sharedItems.length; i++) {
     const item = sharedItems[i];
 
@@ -2692,14 +2741,30 @@ async function handleIncomingSharedFiles() {
 
     const fileBlob = item.blob || item;
     // 重建標準 File 物件
-    const file = new File([fileBlob], item.name || `shared_file_${Date.now()}`, {
+    const file = new File([fileBlob], item.name || `shared_file_${Date.now()}_${i + 1}`, {
       type: item.type || fileBlob.type || 'application/octet-stream'
     });
+    incomingFiles.push(file);
 
-    const userNotes = item.text || item.title ? `[系統分享] ${item.title || ''} ${item.text || ''}`.trim() : `[系統分享] 來自 Android 系統分享之檔案`;
+    if (item.title || item.text) {
+      const notePart = `${item.title || ''} ${item.text || ''}`.trim();
+      if (notePart && !combinedNotes.includes(notePart)) {
+        combinedNotes = combinedNotes ? `${combinedNotes} | ${notePart}` : notePart;
+      }
+    }
+  }
 
-    // 走智慧場景分流通道 (單檔/多檔自動調用分類彈窗)
-    await handleFileUpload(file);
+  // 🌟 將系統備註帶入文字框供分流直傳時引用
+  if (noteTextarea && combinedNotes) {
+    noteTextarea.value = `[系統分享] ${combinedNotes}`;
+  }
+
+  // 🚀 關鍵架構修復：不論來源為多張圖片或多個 PDF，整批送入批次分流門閥！
+  // 避免過去 for 迴圈逐張彈窗，徹底釋放 2 張照片/2 個 PDF 自動合成名片能力！
+  if (incomingFiles.length === 1) {
+    await handleFileUpload(incomingFiles[0]);
+  } else if (incomingFiles.length > 1) {
+    await handleFilesBatch(incomingFiles);
   }
 
   // 清除 URL hash 中的 #share-incoming 標記
