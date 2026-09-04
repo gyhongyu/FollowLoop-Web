@@ -91,31 +91,36 @@ class AiTaskLogger {
     const pill = document.getElementById("ai-task-status-pill");
     const textEl = document.getElementById("ai-task-status-text");
     const iconEl = document.getElementById("ai-task-status-icon");
-    if (!pill || !textEl) return;
+    if (!pill) return;
 
-    textEl.textContent = text;
+    if (textEl) textEl.textContent = text;
     if (title) pill.title = title;
 
     if (state === "running") {
-      pill.style.background = "rgba(245, 158, 11, 0.15)";
+      pill.style.background = "rgba(245, 158, 11, 0.25)";
       pill.style.color = "#fbbf24";
-      pill.style.borderColor = "rgba(245, 158, 11, 0.4)";
+      pill.style.borderColor = "rgba(245, 158, 11, 0.6)";
+      pill.style.boxShadow = "0 0 10px rgba(245, 158, 11, 0.4)";
       if (iconEl) iconEl.textContent = "⚡";
     } else if (state === "success") {
-      pill.style.background = "rgba(16, 185, 129, 0.15)";
+      pill.style.background = "rgba(16, 185, 129, 0.2)";
       pill.style.color = "#34d399";
-      pill.style.borderColor = "rgba(16, 185, 129, 0.4)";
-      if (iconEl) iconEl.textContent = "✅";
+      pill.style.borderColor = "rgba(16, 185, 129, 0.5)";
+      pill.style.boxShadow = "none";
+      if (iconEl) iconEl.textContent = "🤖";
     } else if (state === "error") {
-      pill.style.background = "rgba(239, 68, 68, 0.2)";
+      pill.style.background = "rgba(239, 68, 68, 0.25)";
       pill.style.color = "#f87171";
-      pill.style.borderColor = "rgba(239, 68, 68, 0.5)";
-      if (iconEl) iconEl.textContent = "❌";
+      pill.style.borderColor = "rgba(239, 68, 68, 0.6)";
+      pill.style.boxShadow = "0 0 10px rgba(239, 68, 68, 0.4)";
+      if (iconEl) iconEl.textContent = "⚠️";
     } else {
+      // 💤 閒置待命狀態：睡覺圖標
       pill.style.background = "rgba(99, 102, 241, 0.12)";
       pill.style.color = "#818cf8";
       pill.style.borderColor = "rgba(99, 102, 241, 0.35)";
-      if (iconEl) iconEl.textContent = "🤖";
+      pill.style.boxShadow = "none";
+      if (iconEl) iconEl.textContent = "💤";
     }
   }
 
@@ -2631,20 +2636,37 @@ function startAutoRefresh() {
 window.renderLiveViewGrid = renderLiveViewGrid;
 window.renderLiveViewDashboard = renderLiveViewDashboard;
 
-// ☁️ 頂部微型雲端指示燈控制函數
+// ☁️ 頂部雲端試算表連線狀態控制函數 (綠雲 🟢☁️ 成功 / 紅雲 🔴☁️ 失敗)
 window.setCloudStatus = function (status) {
   const pill = document.getElementById("cloud-sync-status");
   if (!pill) return;
 
+  const iconEl = document.getElementById("cloud-sync-icon");
+  const textEl = document.getElementById("cloud-sync-text");
+
   if (status === "syncing") {
-    pill.className = "cloud-status-pill syncing";
-    pill.innerHTML = "<span class='spin-icon'>🔄</span> 雲端同步中...";
-  } else if (status === "offline") {
-    pill.className = "cloud-status-pill offline";
-    pill.innerHTML = "🟠 本地已存 (離線)";
+    pill.style.background = "rgba(245, 158, 11, 0.15)";
+    pill.style.borderColor = "rgba(245, 158, 11, 0.4)";
+    pill.style.color = "#fbbf24";
+    pill.title = "Google Sheet 雲端同步中...";
+    if (iconEl) iconEl.textContent = "🔄";
+    if (textEl) textEl.textContent = "同步中";
+  } else if (status === "offline" || status === "error") {
+    // 🔴 紅雲：連線失敗或離線
+    pill.style.background = "rgba(239, 68, 68, 0.2)";
+    pill.style.borderColor = "rgba(239, 68, 68, 0.5)";
+    pill.style.color = "#f87171";
+    pill.title = "Google Sheet 雲端連線失敗或處於離線狀態";
+    if (iconEl) iconEl.textContent = "⛈️";
+    if (textEl) textEl.textContent = "連線失敗";
   } else {
-    pill.className = "cloud-status-pill";
-    pill.innerHTML = "🟢 雲端已同步";
+    // 🟢 綠雲：連線正常
+    pill.style.background = "rgba(16, 185, 129, 0.15)";
+    pill.style.borderColor = "rgba(16, 185, 129, 0.4)";
+    pill.style.color = "#34d399";
+    pill.title = "Google Sheet 雲端連線正常已同步";
+    if (iconEl) iconEl.textContent = "☁️";
+    if (textEl) textEl.textContent = "已連線";
   }
 };
 

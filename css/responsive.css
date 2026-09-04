@@ -21,36 +21,299 @@
 /* 手機裝置 (max-width: 768px) */
 @media (max-width: 768px) {
   .app-container {
-    padding: 12px;
+    padding: 6px 8px !important;
   }
 
+  /* 消除各頁籤主容器過大間距 */
+  .ingestion-grid,
+  .hitl-container,
+  .tab-content-section {
+    gap: 10px !important;
+  }
+
+  .card-panel {
+    padding: 14px 12px !important;
+    margin-bottom: 0 !important;
+  }
+
+  /* 📱 頂部 Header 極致瘦身：單行緊湊排版 (高度 44px)，永遠 Sticky 凍結在頂部不被捲走 */
   .app-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
-    padding: 16px;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 4px !important;
+    padding: 6px 10px !important;
+    margin-bottom: 8px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    background: var(--bg-card-glass) !important;
   }
 
+  .brand-logo img {
+    height: 20px !important;
+    margin-right: 0 !important;
+  }
+
+  /* 隱藏頂部大標題與版本號，省出大量高度 */
+  .brand-logo div {
+    display: none !important;
+  }
+
+  /* 頂部導覽列：緊密膠囊式，寬度彈性適中，等分 3 格，杜絕右側溢出被裁切 */
   .nav-tabs {
-    width: 100%;
-    justify-content: space-between;
+    width: auto !important;
+    flex: 1;
+    max-width: 145px;
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    gap: 3px !important;
+    padding: 2px !important;
+    margin: 0 2px;
+    box-sizing: border-box !important;
+    overflow: visible !important;
   }
 
   .nav-tab-btn {
-    padding: 8px 12px;
-    font-size: 0.82rem;
-    flex: 1;
+    padding: 3px 0 !important;
+    height: 30px !important;
+    font-size: 1rem !important;
+    flex: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    white-space: nowrap;
+    border-radius: var(--radius-sm);
+    box-sizing: border-box !important;
+  }
+
+  /* 📱 頂部右側功能組：打工仔 💤/⚡ + 雲端 ☁️ + 齒輪 ⚙️ */
+  .header-right-controls {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+  }
+
+  .header-icon-pill {
+    padding: 0 !important;
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .header-icon-pill span:first-child {
+    font-size: 1.05rem !important;
+  }
+
+  .btn-admin-panel {
+    padding: 0 !important;
+    width: 30px !important;
+    height: 30px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 1.05rem !important;
+    border-radius: 8px !important;
+  }
+
+  /* 📱 手機端純圖標化適配：隱藏桌面文字，放大圖標 */
+  .nav-text-desktop,
+  .btn-text-desktop {
+    display: none !important;
+  }
+
+  .nav-icon,
+  .btn-icon {
+    font-size: 1.1rem;
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
   }
 
-  .liveview-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 16px;
+  /* 📱 手機端小圖標按鈕：精緻正方形圓角按鈕 (34x34)，告別肥大笨重感 */
+  .mobile-icon-only-btn {
+    padding: 0 !important;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    border-radius: 8px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+  }
+
+  .mobile-icon-only-btn .btn-icon {
+    font-size: 1rem !important;
+  }
+
+  /* 📱 徹底隱藏各模組在手機端的囉唆大標題與解說段落 */
+  .liveview-toolbar .panel-title,
+  .liveview-toolbar p,
+  .hitl-main-title,
+  .section-desc-text,
+  .card-panel > p,
+  .timeline-section-header span:last-child {
+    display: none !important;
+  }
+
+  .hitl-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-card-light);
+  }
+
+  .hitl-sub-nav {
+    display: flex;
+    gap: 6px;
+  }
+
+  .hitl-sub-btn {
+    padding: 6px 10px !important;
+    font-size: 0.85rem !important;
+  }
+
+  /* 📱 專案詳情彈窗 Header 優化：解決垂直兩道符咒問題 */
+  .crm-modal-wide .modal-header {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  /* 📱 專案超長標題智能截斷：限制 2 行 + 點擊展開 */
+  .crm-modal-wide .modal-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.35;
+    font-size: 1.05rem !important;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .crm-modal-wide .modal-title.expanded {
+    -webkit-line-clamp: unset !important;
+    overflow: visible;
+  }
+
+  /* 📱 CRM 看板工具列手機端優雅排版：搜尋占上方，下拉選單 + 兩顆小圖標按鈕一行對齊，徹底杜絕被擠出螢幕與穿透空白 */
+  .liveview-toolbar,
+  .liveview-toolbar.sticky-toolbar {
+    position: static !important;
+    top: auto !important;
+    box-shadow: var(--shadow-card) !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 8px 10px !important;
+    margin-bottom: 10px !important;
+    gap: 8px !important;
+  }
+
+  .liveview-toolbar > div:first-child {
+    display: none !important;
+  }
+
+  .liveview-toolbar > div:last-child {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+    flex-wrap: nowrap !important;
   }
 
   .search-input-box {
-    max-width: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 36px !important;
+    padding: 0 10px !important;
+    box-sizing: border-box !important;
+  }
+
+  .search-input-box input {
+    font-size: 0.85rem !important;
+    width: 100% !important;
+  }
+
+  /* 下拉選單與小按鈕在第二行並排展示 */
+  #kpi-filter-select {
+    flex: 1 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 36px !important;
+    padding: 0 8px !important;
+    font-size: 0.82rem !important;
+    box-sizing: border-box !important;
+  }
+
+  .liveview-toolbar-row2 {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  /* 📱 HITL 審核關卡頂部排版修復：去油去厚白底，小巧精緻，按鈕與子頁籤左右乾淨對齊 */
+  .hitl-header-bar {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    background: var(--bg-card-glass) !important;
+    padding: 8px 12px !important;
+    margin-bottom: 12px !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: none !important;
+    border: 1px solid var(--border-glass) !important;
+  }
+
+  .hitl-header-bar > div:first-child {
+    flex: 1;
+  }
+
+  .hitl-header-bar > div:first-child > div {
+    margin-bottom: 0 !important;
+  }
+
+  #hitl-refresh-btn {
+    padding: 0 !important;
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* 📱 Admin 設定面板在手機上修復：未開啟時徹底移出螢幕外 (-100vw)，防止寬度擴大後殘留一截半條在畫面上 */
+  #admin-panel {
+    width: 88vw !important;
+    max-width: 88vw !important;
+    right: -100vw !important;
+    transition: right 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  #admin-panel.active {
+    right: 0 !important;
   }
 
   .hitl-actions {
