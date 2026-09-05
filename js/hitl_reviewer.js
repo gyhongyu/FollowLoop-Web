@@ -50,11 +50,21 @@ class HitlReviewer {
 
   /**
    * 向 GAS 拉取尚待 HITL 審核的卡片列表 (agent_status === PENDING_REVIEW)
-   * 優先採用穩定的 sendGasGetRequest("Memory_Pool_Raw") 提取真值
+   * 🌟 方案 A 穿透直連：優先採用 sendCloudGasGetRequest 提取雲端 SSOT 真值
    */
   async fetchPendingCards() {
     try {
-      const res = await sendGasGetRequest("Memory_Pool_Raw");
+      let res = null;
+      if (typeof sendCloudGasGetRequest === "function") {
+        try {
+          res = await sendCloudGasGetRequest("Memory_Pool_Raw");
+        } catch (cloudErr) {
+          console.warn("[HitlReviewer] 雲端直連待審隊列異常，嘗試本地降級:", cloudErr);
+        }
+      }
+      if (!res || res.status !== "success" || !Array.isArray(res.data)) {
+        res = await sendGasGetRequest("Memory_Pool_Raw");
+      }
       if (res && res.status === "success" && Array.isArray(res.data) && res.data.length > 1) {
         const rows = res.data;
         const pendingList = [];
@@ -160,6 +170,53 @@ class HitlReviewer {
   }
 
   /**
+   * 內部輔助：100% 穿透直發雲端 GAS review_action，並雙向同步本地 SQLite
+   */
+  async _sendReviewAction(targetId, decision, extraData = {}) {
+    const payload = {
+      log_id: targetId,
+      entry_id: targetId,
+      decision: decision,
+      ...extraData
+    };
+
+    // 1. 100% 直連雲端 GAS (單一真理 SSOT，物理抹除或變更狀態)
+    let cloudRes = null;
+    try {
+      if (typeof sendCloudGasRequest === "function") {
+        cloudRes = await sendCloudGasRequest("review_action", payload);
+      } else {
+        cloudRes = await sendGasRequest("review_action", payload);
+      }
+    } catch (e) {
+      console.warn("[HitlReviewer] 雲端 review_action 警示:", e);
+    }
+
+    // 2. 雙重保險：同步通知本地 SQLite (若本地微服務在線，確保 F5 不殘留舊快取)
+    if (CONFIG.IS_LOCAL_MODE) {
+      try {
+        if (decision === "REJECT") {
+          await fetch(`${CONFIG.LOCAL_API_BASE}/action`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete_record", sheet: "Memory_Pool_Raw", id: targetId })
+          });
+        } else if (decision === "APPROVE") {
+          await fetch(`${CONFIG.LOCAL_API_BASE}/action`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "review_action", log_id: targetId, decision: "APPROVE" })
+          });
+        }
+      } catch (locErr) {
+        console.warn("[HitlReviewer] 本地 SQLite 同步略過:", locErr);
+      }
+    }
+
+    return cloudRes;
+  }
+
+  /**
    * 操作 1：【是 (Approve)】— 原地批准寫入 Memory_Pool_Raw
    * @param {string} logId 
    */
@@ -170,12 +227,7 @@ class HitlReviewer {
     const targetId = card.log_id || card.entry_id;
     console.log(`[HitlReviewer] 人工審核 [是]：原地批准卡片 ${targetId}`);
 
-    const res = await sendGasRequest("review_action", {
-      log_id: targetId,
-      entry_id: targetId,
-      decision: "APPROVE"
-    });
-
+    const res = await this._sendReviewAction(targetId, "APPROVE");
     if (res && res.status !== "success") {
       throw new Error(res.message || "GAS 批准操作未成功");
     }
@@ -199,13 +251,7 @@ class HitlReviewer {
     const targetId = card.log_id || card.entry_id;
     console.log(`[HitlReviewer] 人工審核 [修改]：更新卡片 ${targetId}`, updatedFields);
 
-    const res = await sendGasRequest("review_action", {
-      log_id: targetId,
-      entry_id: targetId,
-      decision: "EDIT",
-      data: updatedFields
-    });
-
+    const res = await this._sendReviewAction(targetId, "EDIT", { data: updatedFields });
     if (res && res.status !== "success") {
       throw new Error(res.message || "GAS 修訂批准操作未成功");
     }
@@ -218,7 +264,9 @@ class HitlReviewer {
 
   /**
    * 操作 3：【否 (Reject)】— 物理抹除作廢 (Physical Deletion & File Cleanup)
-   * 絕不寫入數據庫，並自動清理關聯的暫存檔案或雲端硬碟檔案
+   * 1. 物理刪除個人 Google Drive 圖檔並自 FollowLoop_google_drive_files 總帳物理清除
+   * 2. 物理抹除雲端 Google Sheet 的 Memory_Pool_Raw 該行 (sheet.deleteRow)
+   * 3. 同步物理抹除本地 SQLite 該行，杜絕 F5 刷新後復活
    * @param {string} logId 
    */
   async rejectCard(logId) {
@@ -227,58 +275,52 @@ class HitlReviewer {
 
     console.log(`[HitlReviewer] 人工審核 [否]：卡片 ${targetId} 物理作廢並清理來源`);
 
-    // 嘗試從附件鏈結中提取 Google Drive File ID
-    let driveFileId = "";
-    if (card && card.attachment_links) {
-      try {
-        const links = typeof card.attachment_links === "string" ? JSON.parse(card.attachment_links) : card.attachment_links;
-        if (Array.isArray(links)) {
-          for (const l of links) {
-            const m = (l.url || "").match(/[-\w]{25,}/);
-            if (m) {
-              driveFileId = m[0];
-              break;
+    // 1. 精準提取所有關聯的 Google Drive File ID
+    const filesToTrash = new Set();
+    if (card) {
+      if (card.attachment_links) {
+        try {
+          const links = typeof card.attachment_links === "string" ? JSON.parse(card.attachment_links) : card.attachment_links;
+          if (Array.isArray(links)) {
+            for (const l of links) {
+              if (l.id) filesToTrash.add(l.id);
+              const m = (l.url || "").match(/[-\w]{25,}/);
+              if (m) filesToTrash.add(m[0]);
             }
           }
+        } catch (e) {}
+      }
+      if (card.attachments && Array.isArray(card.attachments)) {
+        for (const att of card.attachments) {
+          if (att.id) filesToTrash.add(att.id);
+          const m = (att.url || "").match(/[-\w]{25,}/);
+          if (m) filesToTrash.add(m[0]);
         }
-      } catch (e) {}
+      }
+      if (card.drive_file_id) filesToTrash.add(card.drive_file_id);
     }
 
-    // 發送物理抹除請求 (試算表列刪除 - 僅處理業務主表 Memory_Pool_Raw，絕不觸發企業 Drive 權限)
-    await sendGasRequest("review_action", {
-      log_id: targetId,
-      entry_id: targetId,
-      decision: "REJECT"
-    }).catch(e => {
-      console.warn("[HitlReviewer] Reject 背景警示:", e);
-    });
-
-    // 🗑️ 若有 Drive 附件 File ID，通知個人 Drive 網關物理移至垃圾桶並標記總帳 TRASHED
-    (async () => {
-      try {
-        const filesToTrash = new Set();
-        if (driveFileId) filesToTrash.add(driveFileId);
-        if (card && card.attachments && Array.isArray(card.attachments)) {
-          for (const att of card.attachments) {
-            const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
-            if (fid) filesToTrash.add(fid);
-          }
+    // 2. 🗑️ 嚴格 AWAIT 物理刪除 Google Drive 檔案並同步自 FollowLoop_google_drive_files 總帳清除
+    if (typeof sendDriveGasRequest === "function" && filesToTrash.size > 0) {
+      for (const fid of filesToTrash) {
+        console.log(`[HitlReviewer] 正在物理刪除 Google Drive 檔案並清退總帳: ${fid}...`);
+        try {
+          await sendDriveGasRequest("delete_file", { file_id: fid });
+          console.log(`[HitlReviewer] ✅ 檔案 ${fid} 已移至垃圾桶並自總帳物理抹除！`);
+        } catch (delErr) {
+          console.warn(`[HitlReviewer] 物理刪除 Drive 檔案 ${fid} 警示:`, delErr);
         }
-        if (typeof sendDriveGasRequest === "function") {
-          for (const fid of filesToTrash) {
-            await sendDriveGasRequest("delete_file", { file_id: fid }).catch(e => console.warn("[HitlReviewer] Drive 檔案刪除警告:", e));
-          }
-        }
-      } catch (delErr) {
-        console.warn("[HitlReviewer] 物理刪除 Drive 檔案略過:", delErr);
       }
-    })();
+    }
 
-    // 本地即時物理移除卡片
+    // 3. 雲端 Google Sheet + 本地 SQLite 物理抹除 Memory_Pool_Raw 該行
+    await this._sendReviewAction(targetId, "REJECT");
+
+    // 4. 本地即時物理移除卡片
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
-    return { status: "success", message: `🗑️ 已成功作廢名片/情報 (${targetId}) 並物理清理雲端圖檔！` };
+    return { status: "success", message: `🗑️ 已成功作廢名片/情報 (${targetId}) 並物理清理雲端圖檔與總帳！` };
   }
 
   /**
@@ -421,12 +463,8 @@ class HitlReviewer {
       }
     })();
 
-    // 5. 呼叫 GAS review_action 將待審佇列標記為 APPROVED
-    await sendGasRequest("review_action", {
-      log_id: targetId,
-      entry_id: targetId,
-      decision: "APPROVE"
-    }).catch(e => {
+    // 5. 呼叫 GAS review_action 將待審佇列標記為 APPROVED (直連雲端並雙向同步本地)
+    await this._sendReviewAction(targetId, "APPROVE").catch(e => {
       console.warn("[HitlReviewer] 名片佇列狀態更新警示:", e);
     });
 
@@ -459,10 +497,7 @@ class HitlReviewer {
       notes: card.notes || ""
     });
 
-    await sendGasRequest("review_action", {
-      log_id: targetId,
-      entry_id: targetId,
-      decision: "EDIT",
+    await this._sendReviewAction(targetId, "EDIT", {
       data: {
         entity_target: card.name,
         target_purpose: card.title || "",

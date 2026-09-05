@@ -250,6 +250,10 @@ class LiveView {
       if (!jsonStr) return null;
       const parsed = JSON.parse(jsonStr);
       if (parsed && Array.isArray(parsed.masterData) && parsed.masterData.length > 0) {
+        // 🛡️ 數據完整性自癒防線：若快照中無專案附件，判定為不完整快照，強制重新拉取
+        if (!Array.isArray(parsed.attachmentsData) || parsed.attachmentsData.length <= 1) {
+          return null;
+        }
         return parsed;
       }
       return null;

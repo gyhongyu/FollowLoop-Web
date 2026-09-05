@@ -3,9 +3,18 @@
  * 整合：直傳門閥 (預設開啟) / HITL 審核 / 專案看板 (全屏 Promise Blocking & Local Draft CRUD)
  */
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   console.log(`[FollowLoop-Web] 應用程式初始化 (V2.0 Auth + Local Draft & SSOT)... 版本: ${CONFIG.VERSION}`);
   
+  // 0. 優先極速探測本地 SQLite 服務 (127.0.0.1:8765)，確保登入與看板第一時間走 0ms 本地直連
+  if (typeof detectLocalBackend === "function") {
+    try {
+      await detectLocalBackend();
+    } catch (e) {
+      console.warn("探測本地後端異常:", e);
+    }
+  }
+
   // Auth-first：先登入驗證，成功後才初始化所有模組
   FL_AUTH.initAuth(function onLoginSuccess(user) {
     console.log(`[Auth] 登入成功: ${user.name} (${user.id}), 角色: ${user.roles}`);
@@ -13,6 +22,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // 登入後刷新 Admin Panel 主題卡片（per-user key 生效後需重建）
     if (window.FL_ADMIN && window.FL_ADMIN.refreshAfterLogin) {
       window.FL_ADMIN.refreshAfterLogin();
+    }
+
+    // 確保頂部狀態燈正確顯示
+    if (typeof updateBackendStatusUI === "function") {
+      updateBackendStatusUI(CONFIG.IS_LOCAL_MODE);
     }
 
     // 1. 初始化草稿狀態列事件
@@ -2034,9 +2048,12 @@ function renderLiveViewGrid() {
    6. Modal 專案詳情與 21 欄 CRM 雙欄板 (Timeline Spine & Inline Edit CRUD)
    -------------------------------------------------------------------------- */
 window.editingTimelineLogId = null;
+window.confirmingDeleteLogId = null;
 
 window.openKpiDetailModal = function (kpiId) {
   window.currentActiveKpiId = kpiId;
+  window.editingTimelineLogId = null;
+  window.confirmingDeleteLogId = null;
   const item = liveView.viewRows.find((r) => r.id === kpiId);
   if (!item) return;
   window.currentActiveKpiItemCode = item.itemCode;
@@ -2122,12 +2139,19 @@ window.openKpiDetailModal = function (kpiId) {
     const newBtn = addBtn.cloneNode(true);
     addBtn.parentNode.replaceChild(newBtn, addBtn);
 
-    newBtn.addEventListener("click", () => {
+    const handleAddTimelineLog = async () => {
       const text = addInput.value.trim();
       if (!text) {
-        showToast("請輸入動態內文！", "warning");
+        showToast("⚠️ 請先在輸入框輸入動態內容！", "warning");
+        console.warn("⚠️ [Timeline] 請先在輸入框輸入動態內容後再點擊新增");
+        addInput.focus();
+        addInput.style.borderColor = "#f59e0b";
+        setTimeout(() => { addInput.style.borderColor = ""; }, 1500);
         return;
       }
+
+      showToast(CONFIG.IS_LOCAL_MODE ? "⚡ [本地 0ms] 正在寫入 SQLite..." : "☁️ 正在同步動態至雲端...", "info");
+      console.log(`⚡ [Timeline] 開始新增動態至 ${item.itemCode || "General"}: "${text}"`);
 
       const logId = `LOG_${Date.now()}`;
       const nowIso = new Date().toISOString();
@@ -2158,30 +2182,44 @@ window.openKpiDetailModal = function (kpiId) {
       addInput.value = "";
       liveView.reparse();
       renderLiveViewGrid();
-      const updatedItem = liveView.viewRows.find((r) => r.id === item.id);
+      const updatedItem = liveView.viewRows.find((r) => r.id === item.id || r.itemCode === item.itemCode);
       if (updatedItem) renderTimelineSpine(updatedItem);
 
       if (typeof window.setCloudStatus === "function") {
         window.setCloudStatus("syncing");
       }
 
-      (async () => {
-        try {
-          await sendGasRequest("batch_append_raw", {
-            sheet: "Memory_Pool_Raw",
-            rows: [newRawRow]
-          });
-          if (typeof window.setCloudStatus === "function") {
-            window.setCloudStatus("synced");
-          }
-        } catch (err) {
-          console.error("[AutoSync] 時間軸同步失敗:", err);
-          if (typeof window.setCloudStatus === "function") {
-            window.setCloudStatus("offline");
+      try {
+        const res = await sendGasRequest("batch_append_raw", {
+          sheet: "Memory_Pool_Raw",
+          rows: [newRawRow]
+        });
+        if (res && res.status === "success") {
+          showToast(CONFIG.IS_LOCAL_MODE ? "⚡ 最新動態已成功寫入本地 SQLite！" : "✅ 最新動態已同步至雲端！", "success");
+          console.log("⚡ [Timeline] 動態已成功寫入資料庫:", logId);
+          if (CONFIG.IS_LOCAL_MODE && typeof window.checkCloudSyncStatus === "function") {
+            window.checkCloudSyncStatus();
           }
         }
-      })();
-    });
+        if (typeof window.setCloudStatus === "function") {
+          window.setCloudStatus("synced");
+        }
+      } catch (err) {
+        console.error("[AutoSync] 時間軸同步失敗:", err);
+        showToast(`❌ 同步失敗: ${err.message}`, "error");
+        if (typeof window.setCloudStatus === "function") {
+          window.setCloudStatus("offline");
+        }
+      }
+    };
+
+    newBtn.addEventListener("click", handleAddTimelineLog);
+    addInput.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleAddTimelineLog();
+      }
+    };
   }
 
   // 6.5 綁定「➕ 新增」專案資源鏈結按鈕事件 (0ms 本地快取 ✕ 背景自動同步)
@@ -2351,6 +2389,7 @@ function renderTimelineSpine(item, activeEditLogId = null) {
 
       const timeStr = getLogDisplayDate(log);
       const isInlineEditing = (activeEditLogId === log.logId);
+      const isConfirmingDelete = (window.confirmingDeleteLogId === log.logId);
 
       if (isInlineEditing) {
         return `
@@ -2373,6 +2412,28 @@ function renderTimelineSpine(item, activeEditLogId = null) {
         `;
       }
 
+      if (isConfirmingDelete) {
+        return `
+          <div class="timeline-item-card ${isDraftClass}" style="border-color: #ef4444; background: rgba(239, 68, 68, 0.08);">
+            <div class="timeline-content" style="width: 100%;">
+              <div class="timeline-meta">
+                <span>📅 ${timeStr}</span>
+                ${isDraftBadge}
+                <span style="color: #f87171; font-weight: 700; font-size: 0.75rem; margin-left: 6px;">⚠️ 抹除確認</span>
+              </div>
+              <div class="timeline-text" style="color: #94a3b8; font-size: 0.86rem; margin-bottom: 8px;">${stripLeadingDate(log.updateLog)}</div>
+              <div style="padding: 8px 12px; background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                <span style="font-size: 0.84rem; color: #fca5a5; font-weight: 600;">確定自本地與雲端物理抹除此筆動態？此操作不可逆。</span>
+                <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                  <button class="btn-primary" style="background: #ef4444; border: 1px solid #dc2626; padding: 4px 12px; font-size: 0.82rem; font-weight: 700; border-radius: 4px; color: #fff; cursor: pointer;" onclick="onExecuteDeleteTimelineItem('${item.id}', '${log.logId}')">✓ 確定抹除</button>
+                  <button class="btn-secondary" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); padding: 4px 10px; font-size: 0.82rem; border-radius: 4px; color: #cbd5e1; cursor: pointer;" onclick="onCancelDeleteTimelineItem('${item.id}')">✕ 取消</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
       return `
         <div class="timeline-item-card ${isDraftClass}">
           <div class="timeline-content">
@@ -2383,8 +2444,8 @@ function renderTimelineSpine(item, activeEditLogId = null) {
             <div class="timeline-text">${stripLeadingDate(log.updateLog)}</div>
           </div>
           <div class="timeline-actions">
-            <button class="btn-timeline-action-icon" title="編輯這筆跟進紀錄 (暫存本地)" onclick="onToggleInlineEditTimelineItem('${item.id}', '${log.logId}')">✏️</button>
-            <button class="btn-timeline-action-icon delete" title="作廢這筆跟進紀錄 (暫存本地)" onclick="onDeleteTimelineItem('${item.id}', '${log.logId}')">🗑️</button>
+            <button class="btn-timeline-action-icon" title="編輯這筆跟進紀錄" onclick="onToggleInlineEditTimelineItem('${item.id}', '${log.logId}')">✏️</button>
+            <button class="btn-timeline-action-icon delete" title="作廢這筆跟進紀錄" onclick="onAskDeleteTimelineItem('${item.id}', '${log.logId}')">🗑️</button>
           </div>
         </div>
       `;
@@ -2395,52 +2456,138 @@ function renderTimelineSpine(item, activeEditLogId = null) {
 // 切換為卡片行內編輯模式 (Inline Edit)
 window.onToggleInlineEditTimelineItem = function (kpiId, logId) {
   window.editingTimelineLogId = logId;
-  const item = liveView.viewRows.find((r) => r.id === kpiId);
+  window.confirmingDeleteLogId = null;
+  const item = liveView.viewRows.find((r) => r.id === kpiId || r.itemCode === window.currentActiveKpiItemCode);
   if (item) renderTimelineSpine(item, logId);
 };
 
 // 取消卡片行內編輯模式
 window.onCancelInlineEditTimelineItem = function (kpiId) {
   window.editingTimelineLogId = null;
-  const item = liveView.viewRows.find((r) => r.id === kpiId);
+  const item = liveView.viewRows.find((r) => r.id === kpiId || r.itemCode === window.currentActiveKpiItemCode);
   if (item) renderTimelineSpine(item, null);
 };
 
-// 儲存卡片行內編輯結果至本地草稿
-window.onSaveInlineEditTimelineItem = function (kpiId, logId) {
+// 儲存卡片行內編輯結果（樂觀直寫：本地 SQLite 0ms / 雲端 GAS 備援）
+window.onSaveInlineEditTimelineItem = async function (kpiId, logId) {
   const textarea = document.getElementById(`inline-edit-textarea-${logId}`);
   if (!textarea) return;
 
   const newText = textarea.value.trim();
   if (!newText) {
-    showToast("紀錄內文不可為空！", "warning");
+    showToast("⚠️ 紀錄內文不可為空！", "warning");
     return;
   }
 
-  window.draftStore.editDraftLog(logId, newText);
-  showToast("修訂已暫存至本地草稿！(按頂部「更新至雲端」生效)", "info");
+  // 1. 樂觀即時更新前端記憶體 (相容 rawLogs 與 logs)
+  if (liveView && liveView.viewRows) {
+    liveView.viewRows.forEach(row => {
+      (row.rawLogs || row.logs || []).forEach(lg => {
+        if (lg.logId === logId) lg.updateLog = newText;
+      });
+    });
+  }
+
+  // 同步更新 lastRawData
+  if (window.liveView && Array.isArray(window.liveView.lastRawData)) {
+    const rawIdx = window.liveView.lastRawData.findIndex(r => r[0] === logId);
+    if (rawIdx !== -1) {
+      window.liveView.lastRawData[rawIdx][7] = newText;
+    }
+  }
+  if (typeof window.liveView?.saveLocalCache === "function") {
+    window.liveView.saveLocalCache();
+  }
 
   window.editingTimelineLogId = null;
-  liveView.reparse();
   renderLiveViewGrid();
 
-  const item = liveView.viewRows.find((r) => r.id === kpiId);
+  const item = liveView.viewRows.find((r) => r.id === kpiId || r.itemCode === window.currentActiveKpiItemCode);
+  if (item) renderTimelineSpine(item, null);
+
+  // 2. 直寫後端數據庫 (本地 0ms / 雲端非同步)
+  showToast(CONFIG.IS_LOCAL_MODE ? "⚡ [本地 0ms] 正在寫入 SQLite..." : "☁️ 正在同步修訂至雲端...", "info");
+  console.log("⚡ [Timeline] 正在修訂流水帳:", logId);
+  try {
+    const res = await sendGasRequest("fix_raw_log", { log_id: logId, new_text: newText });
+    if (res && res.status === "success") {
+      showToast(CONFIG.IS_LOCAL_MODE ? "⚡ 流水帳已即時更新至本地 SQLite！" : "✅ 流水帳已更新至雲端！", "success");
+      console.log("⚡ [Timeline] 流水帳修訂成功:", logId);
+      if (CONFIG.IS_LOCAL_MODE && typeof window.checkCloudSyncStatus === "function") {
+        window.checkCloudSyncStatus();
+      }
+    }
+  } catch (err) {
+    showToast(`❌ 修訂失敗: ${err.message}`, "error");
+    console.error("❌ [Timeline] 修訂失敗:", err);
+  }
+};
+
+// 點擊時間軸「🗑️」觸發行內防誤觸確認
+window.onAskDeleteTimelineItem = function (kpiId, logId) {
+  console.log("⚠️ [Timeline] 點擊作廢按鈕，展開行內抹除確認:", logId);
+  window.confirmingDeleteLogId = logId;
+  window.editingTimelineLogId = null;
+  const item = liveView.viewRows.find((r) => r.id === kpiId || r.itemCode === window.currentActiveKpiItemCode);
   if (item) renderTimelineSpine(item, null);
 };
 
-// 點擊時間軸「🗑️ 作廢」
-window.onDeleteTimelineItem = function (kpiId, logId) {
-  if (confirm("確定作廢此筆動態？\n變更將暫存於本地草稿，點擊「更新至雲端」後生效。")) {
-    window.draftStore.deleteDraftLog(logId);
-    showToast("作廢標記已暫存至本地草稿！", "warning");
+// 取消作廢確認
+window.onCancelDeleteTimelineItem = function (kpiId) {
+  console.log("ℹ️ [Timeline] 取消作廢");
+  window.confirmingDeleteLogId = null;
+  const item = liveView.viewRows.find((r) => r.id === kpiId || r.itemCode === window.currentActiveKpiItemCode);
+  if (item) renderTimelineSpine(item, null);
+};
 
-    liveView.reparse();
-    renderLiveViewGrid();
+// 執行物理抹除（樂觀物理抹除：本地 SQLite 0ms / 雲端 GAS 備援）
+window.onExecuteDeleteTimelineItem = async function (kpiId, logId) {
+  window.confirmingDeleteLogId = null;
+  console.log("⚡ [Timeline] 開始物理抹除記錄:", logId);
 
-    const item = liveView.viewRows.find((r) => r.id === kpiId);
-    if (item) renderTimelineSpine(item, null);
+  // 1. 樂觀即時自前端記憶體移除
+  if (liveView && liveView.viewRows) {
+    liveView.viewRows.forEach(row => {
+      if (row.rawLogs) {
+        row.rawLogs = row.rawLogs.filter(lg => lg.logId !== logId);
+      }
+      if (row.logs) {
+        row.logs = row.logs.filter(lg => lg.logId !== logId);
+      }
+    });
+  }
+
+  // 同步自 lastRawData 移除
+  if (window.liveView && Array.isArray(window.liveView.lastRawData)) {
+    window.liveView.lastRawData = window.liveView.lastRawData.filter(r => r[0] !== logId);
+  }
+  if (typeof window.liveView?.saveLocalCache === "function") {
+    window.liveView.saveLocalCache();
+  }
+
+  renderLiveViewGrid();
+
+  const item = liveView.viewRows.find((r) => r.id === kpiId || r.itemCode === window.currentActiveKpiItemCode);
+  if (item) renderTimelineSpine(item, null);
+
+  // 2. 直寫後端數據庫
+  showToast(CONFIG.IS_LOCAL_MODE ? "⚡ [本地 0ms] 正在自 SQLite 物理抹除..." : "☁️ 正在自雲端物理抹除...", "info");
+  try {
+    const res = await sendGasRequest("delete_record", { sheet: "Memory_Pool_Raw", id: logId });
+    if (res && res.status === "success") {
+      showToast(CONFIG.IS_LOCAL_MODE ? "⚡ 記錄已自本地 SQLite 永久抹除！" : "✅ 記錄已自雲端物理抹除！", "success");
+      console.log("⚡ [Timeline] 記錄已自後端成功抹除:", logId);
+      if (CONFIG.IS_LOCAL_MODE && typeof window.checkCloudSyncStatus === "function") {
+        window.checkCloudSyncStatus();
+      }
+    }
+  } catch (err) {
+    showToast(`❌ 抹除失敗: ${err.message}`, "error");
+    console.error("❌ [Timeline] 抹除失敗:", err);
   }
 };
+
+window.onDeleteTimelineItem = window.onAskDeleteTimelineItem;
 
 window.closeDetailModal = function () {
   document.getElementById("detail-modal-backdrop").classList.remove("active");
@@ -2596,7 +2743,7 @@ window.onCloseEditAttachmentModal = function () {
   if (backdrop) backdrop.style.display = "none";
 };
 
-window.onSaveEditAttachmentModal = function () {
+window.onSaveEditAttachmentModal = async function () {
   const kpiId = document.getElementById("edit-att-kpi-id")?.value;
   const linkId = document.getElementById("edit-att-link-id")?.value;
   const titleInput = document.getElementById("modal-edit-att-title");
@@ -2611,41 +2758,62 @@ window.onSaveEditAttachmentModal = function () {
     return;
   }
 
-  window.draftStore.editDraftAttachment(linkId, newTitle, newUrl);
-
-  // 秒速同步修訂記憶體中 viewRows / filteredRows 該筆資產物件
+  // 1. 樂觀即時同步修訂記憶體中 viewRows / filteredRows 該筆資產物件
   (liveView.viewRows || []).concat(liveView.filteredRows || []).forEach((row) => {
     (row.attachments || []).forEach((att) => {
       if (att.linkId === linkId) {
         att.title = newTitle;
         att.url = newUrl;
-        att.isDraft = true;
       }
     });
   });
 
-  showToast("已更新資源名稱/網址至本地草稿！(按頂部「更新至雲端」生效)", "info");
-
   onCloseEditAttachmentModal();
-
-  liveView.reparse();
   renderLiveViewGrid();
 
   const item = liveView.viewRows.find((r) => r.id === kpiId);
   if (item) renderProjectAttachments(item);
+
+  // 2. 直寫後端數據庫 (本地 0ms / 雲端 GAS)
+  showToast(CONFIG.IS_LOCAL_MODE ? "⚡ [本地 0ms] 正在修訂附件..." : "☁️ 正在同步修訂附件...", "info");
+  try {
+    const res = await sendGasRequest("batch_append_raw", {
+      sheet: "Projects_Attachments",
+      rows: [{ link_id: linkId, title: newTitle, url: newUrl }]
+    });
+    if (res && res.status === "success") {
+      showToast(CONFIG.IS_LOCAL_MODE ? "⚡ 附件修訂已即時儲存至本地 SQLite！" : "✅ 附件修訂已更新至雲端！", "success");
+    }
+  } catch (err) {
+    showToast(`❌ 附件修訂失敗: ${err.message}`, "error");
+  }
 };
 
-window.onDeleteAttachmentLink = function (kpiId, linkId) {
-  if (!confirm("確定要在本地草稿中作廢此筆資源鏈結嗎？(按下頂部『更新至雲端』生效)")) return;
+window.onDeleteAttachmentLink = async function (kpiId, linkId) {
+  if (!confirm("確定物理抹除此筆資源鏈結？此操作不可逆。")) return;
 
-  window.draftStore.deleteDraftAttachment(linkId);
-  showToast("已將該筆資源鏈結作廢標記存入本地草稿！", "warning");
+  // 1. 樂觀即時自記憶體移除
+  (liveView.viewRows || []).concat(liveView.filteredRows || []).forEach((row) => {
+    if (row.attachments) {
+      row.attachments = row.attachments.filter(att => att.linkId !== linkId);
+    }
+  });
 
-  liveView.reparse();
   renderLiveViewGrid();
 
   const item = liveView.viewRows.find((r) => r.id === kpiId);
   if (item) renderProjectAttachments(item, null);
+
+  // 2. 直寫物理抹除
+  showToast(CONFIG.IS_LOCAL_MODE ? "⚡ [本地 0ms] 正在自 SQLite 抹除附件..." : "☁️ 正在自雲端抹除附件...", "info");
+  try {
+    const res = await sendGasRequest("delete_record", { sheet: "Projects_Attachments", id: linkId });
+    if (res && res.status === "success") {
+      showToast(CONFIG.IS_LOCAL_MODE ? "⚡ 附件已自本地 SQLite 抹除！" : "✅ 附件已自雲端物理抹除！", "success");
+    }
+  } catch (err) {
+    showToast(`❌ 抹除失敗: ${err.message}`, "error");
+  }
 };
 
 
@@ -2669,8 +2837,9 @@ function showToast(message, type = "info") {
     if (toast.parentElement) {
       toast.remove();
     }
-  }, 4000);
+  }, 2200);
 }
+window.showToast = showToast;
 
 function startAutoRefresh() {
   setInterval(async () => {
@@ -2682,7 +2851,7 @@ function startAutoRefresh() {
 window.renderLiveViewGrid = renderLiveViewGrid;
 window.renderLiveViewDashboard = renderLiveViewDashboard;
 
-// ☁️ 頂部雲端試算表連線狀態控制函數 (綠雲 🟢☁️ 成功 / 紅雲 🔴☁️ 失敗)
+// ☁️ 頂部雲端試算表連線狀態控制函數 (本地模式自動轉發 checkCloudSyncStatus，雲端模式控制綠雲/紅雲)
 window.setCloudStatus = function (status) {
   const pill = document.getElementById("cloud-sync-status");
   if (!pill) return;
@@ -2690,6 +2859,22 @@ window.setCloudStatus = function (status) {
   const iconEl = document.getElementById("cloud-sync-icon");
   const textEl = document.getElementById("cloud-sync-text");
 
+  // 🛡️ 本地模式保護：若是 Local-First 模式，狀態由 checkCloudSyncStatus 單一真源掌控
+  if (CONFIG.IS_LOCAL_MODE) {
+    if (status === "syncing") {
+      pill.style.background = "rgba(245, 158, 11, 0.25)";
+      pill.style.borderColor = "rgba(245, 158, 11, 0.6)";
+      pill.style.color = "#fbbf24";
+      pill.title = "正在與 Google Sheet 雲端數據庫同步中...";
+      if (iconEl) iconEl.textContent = "🔄";
+      if (textEl) textEl.textContent = "同步中...";
+    } else if (typeof window.checkCloudSyncStatus === "function") {
+      window.checkCloudSyncStatus();
+    }
+    return;
+  }
+
+  // ☁️ 純雲端 GAS 備援模式
   if (status === "syncing") {
     pill.style.background = "rgba(245, 158, 11, 0.15)";
     pill.style.borderColor = "rgba(245, 158, 11, 0.4)";
