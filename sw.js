@@ -2,7 +2,7 @@
 // 快取策略：靜態資源 Network-First (網路優先+快取備援)，API / GAS 請求 Network-Only (完全直通)
 // 支援 Web Share Target Level 2 檔案接收並安全中轉至 IndexedDB
 
-const CACHE_NAME = 'followloop-pwa-v5.2.4';
+const CACHE_NAME = 'followloop-pwa-v5.2.5';
 
 // 預快取靜態資源清單
 const STATIC_ASSETS = [
@@ -23,7 +23,7 @@ const STATIC_ASSETS = [
   './js/live_view.js?v=5.2.4',
   './js/project_manager.js?v=5.2.4',
   './js/auth.js?v=5.2.4',
-  './js/app.js?v=5.2.4',
+  './js/app.js?v=5.2.5',
   './js/background-pipeline.js?v=5.2.4',
   './img/icons/icon-192.png',
   './img/icons/icon-512.png',

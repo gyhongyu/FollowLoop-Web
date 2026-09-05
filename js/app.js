@@ -2978,12 +2978,22 @@ async function handleIncomingSharedFiles() {
   for (let i = 0; i < sharedItems.length; i++) {
     const item = sharedItems[i];
 
-    // 🌟 若為純網址分享 ➔ 0 LLM 直接建立 .url 捷徑存入 Links/ 箱
-    const incomingUrl = item.url || (item.text && item.text.match(/^https?:\/\/[^\s]+$/) ? item.text.trim() : null);
-    if (incomingUrl && !item.blob) {
+    // 🌟 若為網址分享 (純 URL 或文字夾帶 URL) ➔ 0 LLM 直接建立 .url 捷徑存入 Links/ 箱
+    let incomingUrl = (item.url && item.url.trim().startsWith('http')) ? item.url.trim() : null;
+    const rawText = (item.text || "").trim();
+    if (!incomingUrl && rawText) {
+      const match = rawText.match(/https?:\/\/[^\s]+/i);
+      if (match) incomingUrl = match[0];
+    }
+
+    // 判斷是否為純網址/純文字快捷方式 (非實體二進位檔案)
+    const isRealBinaryFile = item.blob && (item.blob.size > 0) && (item.type && !item.type.startsWith('text/'));
+
+    if (incomingUrl && !isRealBinaryFile) {
       try {
+        const linkTitle = item.title || rawText.replace(incomingUrl, '').trim() || incomingUrl;
         showToast(`🌐 偵測到網址分享，正在儲存至 Links 箱: ${incomingUrl}`, 'info');
-        await driveUploader.uploadUrlShortcut(incomingUrl, item.title || item.text || '');
+        await driveUploader.uploadUrlShortcut(incomingUrl, linkTitle);
         showToast(`🎉 網址捷徑已安全存入 Links/ 資料夾！`, 'success');
       } catch (urlErr) {
         console.error('[ShareTarget] 網址儲存失敗:', urlErr);
@@ -3008,16 +3018,24 @@ async function handleIncomingSharedFiles() {
   }
 
   // 🌟 將系統備註帶入文字框供分流直傳時引用
-  if (noteTextarea && combinedNotes) {
-    noteTextarea.value = `[系統分享] ${combinedNotes}`;
+  const noteEl = document.getElementById("note-textarea");
+  if (noteEl && combinedNotes) {
+    noteEl.value = `[系統分享] ${combinedNotes}`;
   }
 
-  // 🚀 關鍵架構修復：不論來源為多張圖片或多個 PDF，整批送入批次分流門閥！
-  // 避免過去 for 迴圈逐張彈窗，徹底釋放 2 張照片/2 個 PDF 自動合成名片能力！
-  if (incomingFiles.length === 1) {
-    await handleFileUpload(incomingFiles[0]);
-  } else if (incomingFiles.length > 1) {
-    await handleFilesBatch(incomingFiles);
+  // 🚀 關鍵架構修復：調用 window.handleFilesBatch / window.handleFileUpload，徹底杜絕作用域未定義錯誤
+  try {
+    const uploadSingle = window.handleFileUpload || handleFileUpload;
+    const uploadBatch = window.handleFilesBatch || handleFilesBatch;
+
+    if (incomingFiles.length === 1 && typeof uploadSingle === "function") {
+      await uploadSingle(incomingFiles[0]);
+    } else if (incomingFiles.length > 1 && typeof uploadBatch === "function") {
+      await uploadBatch(incomingFiles);
+    }
+  } catch (procErr) {
+    console.error("[ShareTarget] 處理分享檔案失敗:", procErr);
+    showToast(`處理分享檔案失敗: ${procErr.message}`, "danger");
   }
 
   // 清除 URL hash 中的 #share-incoming 標記
