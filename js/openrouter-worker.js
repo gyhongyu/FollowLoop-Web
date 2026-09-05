@@ -19,7 +19,7 @@ class OpenRouterWorkerClient {
   constructor(options = {}) {
     this.apiKey = options.apiKey || (window.CONFIG && CONFIG.OPENROUTER_DEFAULT_KEY) || '';
     this.groqApiKey = options.groqApiKey || localStorage.getItem('fl_groq_key') || '';
-    this.geminiApiKey = options.geminiApiKey || localStorage.getItem('fl_gemini_key') || '';
+    this.geminiApiKey = options.geminiApiKey || localStorage.getItem('fl_gemini_key') || (window.CONFIG && CONFIG.GEMINI_DEFAULT_KEY) || '';
     
     this.baseUrl = 'https://openrouter.ai/api/v1';
     this.groqBaseUrl = 'https://api.groq.com/openai/v1';

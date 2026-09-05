@@ -51,11 +51,12 @@ class AiTaskLogger {
     this.startTime = 0;
   }
 
-  startTask(taskName, details = "") {
+  startTask(taskName, details = "", taskType = "ai") {
     this.startTime = Date.now();
-    this.currentTask = { name: taskName, status: "RUNNING", startTime: this.startTime };
-    this.updatePill("⚡ 執行中", "running", taskName);
-    this.appendLog(`🚀 [開始] ${taskName} ${details ? `(${details})` : ""}`);
+    this.currentTask = { name: taskName, status: "RUNNING", startTime: this.startTime, type: taskType };
+    const pillLabel = taskType === "upload" ? "⚡ 雲端直傳" : "⚡ 執行中";
+    this.updatePill(pillLabel, "running", taskName);
+    this.appendLog(`🚀 [${taskType === "upload" ? "直傳" : "開始"}] ${taskName} ${details ? `(${details})` : ""}`);
   }
 
   log(step, details = "", status = "running") {
@@ -473,6 +474,51 @@ function initIngestionModule() {
         handleFilesBatch(Array.from(fileInput.files));
       }
     });
+
+    // 📋 全域剪貼簿貼上監聽 (支援直接 Ctrl+V 貼上截圖直傳，或自動填入文字速記框)
+    window.addEventListener("paste", (e) => {
+      const activeEl = document.activeElement;
+      const isTextInputFocused = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items || items.length === 0) return;
+
+      const imageFiles = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type && item.type.startsWith("image/")) {
+          const blob = item.getAsFile();
+          if (blob) {
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, "0");
+            const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+            const ext = blob.type.split("/")[1] || "png";
+            const namedFile = new File([blob], `screenshot_${timestamp}.${ext}`, { type: blob.type });
+            imageFiles.push(namedFile);
+          }
+        }
+      }
+
+      // 1. 若剪貼簿有圖片，直接啟動素材分流直傳
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        showToast(`📋 已自剪貼簿取得 ${imageFiles.length} 張截圖，即刻啟動分流直傳...`, "info");
+        handleFilesBatch(imageFiles);
+        return;
+      }
+
+      // 2. 若剪貼簿為純文字，且游標尚未聚焦任何輸入框 ➔ 自動聚焦速記框並貼上！
+      if (!isTextInputFocused && noteTextarea) {
+        const text = e.clipboardData.getData("text");
+        if (text && text.trim()) {
+          e.preventDefault();
+          noteTextarea.focus();
+          const currentVal = noteTextarea.value;
+          noteTextarea.value = currentVal ? `${currentVal}\n${text}` : text;
+          noteTextarea.selectionStart = noteTextarea.selectionEnd = noteTextarea.value.length;
+          showToast("📋 已自動將剪貼簿文字填入速記框", "info");
+        }
+      }
+    });
   }
 
   if (micBtn) {
@@ -723,18 +769,15 @@ function initIngestionModule() {
     progressBarFill.style.background = "var(--color-primary)";
     const catConfig = CONFIG.RAW_SCENE_CATEGORIES[categoryKey] || CONFIG.RAW_SCENE_CATEGORIES.UNCLASSIFIED;
     progressText.textContent = `⚡ 正在直傳至 ${catConfig.icon} ${catConfig.folder}: ${file.name}... (0%)`;
-    window.FL_AI_LOGGER.startTask(`素材分流直傳 [${catConfig.folder}]`, `${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
 
     try {
       const driveRes = await driveUploader.uploadFileDirect(file, userNotes, (percent) => {
         progressBarFill.style.width = `${percent}%`;
         progressText.textContent = `直傳 ${catConfig.folder} 中: ${percent}%`;
-        window.FL_AI_LOGGER.log("直傳進度", `${percent}%`);
       }, null, categoryKey);
 
       progressBarFill.style.width = "100%";
       progressText.textContent = `✅ 直傳完成！已安全存入 ${catConfig.folder}/`;
-      window.FL_AI_LOGGER.completeTask(`素材已歸入 ${catConfig.folder}/，等待本機 AI 治理`);
       showToast(`🎉 檔案 ${file.name} 已安全存入 ${catConfig.icon} ${catConfig.folder}/！`, "success");
       
       if (noteTextarea) noteTextarea.value = "";
@@ -742,7 +785,6 @@ function initIngestionModule() {
       progressBarFill.style.width = "100%";
       progressBarFill.style.background = "#ef4444";
       progressText.textContent = `❌ 上傳失敗: ${err.message}`;
-      window.FL_AI_LOGGER.failTask(`分流直傳失敗: ${err.message}`);
       showToast(`上傳失敗: ${err.message}`, "danger");
     } finally {
       setTimeout(() => {
@@ -844,17 +886,21 @@ function initIngestionModule() {
     if (isDocument) {
       const isLikelyVoucher = file.name.match(/(invoice|receipt|bill|voucher|ticket|flight|hotel|發票|收據|單據|報銷|水單|車票|機票)/i);
       defaultCat = isLikelyVoucher ? "VOUCHERS" : "PROJECT_DOCS";
-      summaryHint = isLikelyVoucher ? "偵測為報銷單據/發票文檔" : "偵測為專案/技術文檔";
+      summaryHint = isLikelyVoucher ? "偵測為報銷單據/發票文檔" : "偵測為專案/業務文檔";
     } else if (isImage) {
       const isCardName = file.name.match(/(card|namecard|businesscard|名片)/i);
       const isVoucherName = file.name.match(/(invoice|receipt|bill|voucher|ticket|發票|收據|單據|報銷)/i);
       const isChatName = file.name.match(/(chat|wechat|whatsapp|webex|screen|對話|截圖)/i);
+      const isLinkName = file.name.match(/(link|url|http|web|site|news|新聞|鏈結|連結|網址)/i);
       if (isCardName) {
         defaultCat = "BUSINESS_CARDS";
         summaryHint = "檔名特徵包含名片";
       } else if (isVoucherName) {
         defaultCat = "VOUCHERS";
         summaryHint = "檔名特徵包含報銷/發票";
+      } else if (isLinkName) {
+        defaultCat = "LINKS";
+        summaryHint = "檔名特徵包含網址/新聞鏈結";
       } else if (isChatName) {
         defaultCat = "CHAT_SCREENSHOTS";
         summaryHint = "檔名特徵包含對話截圖";

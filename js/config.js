@@ -46,9 +46,10 @@ const CONFIG = {
   // 定時刷新與卡片輪詢間隔 (毫秒)
   AUTO_REFRESH_INTERVAL: 60000,
 
-  // 🤖 打工仔 OpenRouter 免費模型中央總帳與多模態配置 (v2.0)
+  // 🤖 打工仔 OpenRouter & Gemini 免費模型中央總帳與多模態配置 (v2.0)
   OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
   OPENROUTER_DEFAULT_KEY: atob("c2stb3ItdjEtMGFiYzM1YTlhZTI1NzlmOThlNGU4YjNlM2RiMTIzYTY1NWE1NTU3MTE4NjgwYjlkNTcwNGI0NGY0NzYwMWNhNQ=="),
+  GEMINI_DEFAULT_KEY: atob("QVEuQWI4Uk42SjlmcEpKZnBoeTRJeEVFazZZcWhCZ1Y4aDhUYmhzNFNHMkRBWmcxSDZlTUE="),
   OPENROUTER_WORKER_GAS_URL: "https://script.google.com/macros/s/AKfycbwWo9Tf5J8DKV0MgekZQdUpWh2ch7qDwqRC7gXi_5ht_Ng_ErnqeC4NqTKEf1RiNaSSJQ/exec",
   MULTIMODAL_MAX_FILE_SIZE: 25 * 1024 * 1024 // 25MB (超過此大小分流走 Google Drive Resumable 直傳)
 };
