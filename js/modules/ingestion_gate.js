@@ -197,6 +197,8 @@ function initIngestionModule() {
           window.FL_AI_LOGGER.log("持久化存檔", `寫入 Memory_Pool_Raw (${logId})`);
         }
 
+        const isUrlItem = !!extracted.attachment_links;
+
         // 100% 精確對齊 11 欄 RAW_HEADERS
         const rawRow = [
           logId,                                            // 0. A log_id
@@ -206,7 +208,7 @@ function initIngestionModule() {
           extracted.target_purpose || "",                   // 4. E target_purpose
           "",                                               // 5. F our_advantages
           extracted.action_taken || "最新跟進紀錄",          // 6. G action_taken
-          extracted.update_log || text,                     // 7. H update_log
+          isUrlItem ? (extracted.update_log || "") : (extracted.update_log || text), // 7. H update_log (若為外鏈，留空選填)
           extracted.attachment_links || "",                 // 8. I attachment_links
           String(extracted.confidence_score || 0.85),       // 9. J confidence_score
           "PENDING_REVIEW"                                  // 10. K agent_status
@@ -219,7 +221,6 @@ function initIngestionModule() {
         });
 
         // ⚡ 即時注入前端 HITL 待審核佇列 (0ms 反應)
-        const isUrlItem = !!extracted.attachment_links;
         const modelLabel = extracted.params_b ? `${extracted.model_used} (${extracted.params_b}B)` : (extracted.model_used || "OpenRouter");
         const newCard = {
           entry_id: logId,
@@ -229,8 +230,8 @@ function initIngestionModule() {
           project_tag: extracted.project_tag || "NEW_UNCLASSIFIED",
           entity_target: extracted.entity_target || "未指定客戶 (待編輯)",
           target_purpose: extracted.target_purpose || "",
-          action_taken: extracted.action_taken || "最新跟進紀錄",
-          update_log: extracted.update_log || text,
+          action_taken: extracted.action_taken || (isUrlItem ? "登記專案參考資源" : "最新跟進紀錄"),
+          update_log: isUrlItem ? (extracted.update_log || "") : (extracted.update_log || text),
           raw_text: text,
           attachment_links: extracted.attachment_links || "",
           confidence_score: String(extracted.confidence_score || 0.85),
@@ -238,8 +239,7 @@ function initIngestionModule() {
         };
 
         if (window.hitlReviewer) {
-          window.hitlReviewer.pendingCards.unshift(newCard);
-          window.hitlReviewer.notify();
+          window.hitlReviewer.addCardDirectly(newCard);
         }
 
         // 更新頂部 HITL 徽章

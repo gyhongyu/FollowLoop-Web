@@ -79,14 +79,14 @@ class OpenRouterExtractor {
   }
 
   /**
-   * 🌐 純 URL 智慧嗅探與屬性推導 (無需呼叫 LLM，0ms 解析)
+   * 🌐 純 URL 智慧嗅探與屬性推導 (無需呼叫 LLM，優先調用微服務抓真實網頁標題，0 套話)
    * @param {string} url 
    * @param {Array} projectList 
-   * @returns {Object}
+   * @returns {Promise<Object>}
    */
-  sniffUrlDetails(url, projectList = []) {
+  async sniffUrlDetails(url, projectList = []) {
     let category = "Web Link";
-    let title = "專案參考雲端資源";
+    let title = "";
     const lower = url.toLowerCase();
 
     if (lower.includes("spreadsheets") || lower.includes("sheets.google")) {
@@ -103,6 +103,33 @@ class OpenRouterExtractor {
       title = "GitHub 程式碼倉庫/專案鏈結";
     }
 
+    // ⚡ 優先調用本地微服務 (127.0.0.1:8765) 抓取網頁真實標題
+    try {
+      const localRes = await fetch(`http://127.0.0.1:8765/api/fetch_title?url=${encodeURIComponent(url)}`, {
+        signal: AbortSignal.timeout(2500)
+      });
+      if (localRes.ok) {
+        const data = await localRes.json();
+        if (data && data.title && data.title.trim()) {
+          title = data.title.trim();
+        }
+      }
+    } catch (e) {
+      // 離線或超時自癒
+    }
+
+    // 若仍無標題，從 URL 域名與路徑推測乾淨名稱
+    if (!title) {
+      try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.replace(/^www\./, "");
+        const pathEnd = parsed.pathname.split("/").filter(Boolean).pop() || "";
+        title = pathEnd ? `${pathEnd} - ${host}` : `${host} 參考資源`;
+      } catch (e) {
+        title = "專案參考雲端資源";
+      }
+    }
+
     const attLink = JSON.stringify([{
       title: title,
       url: url,
@@ -115,10 +142,10 @@ class OpenRouterExtractor {
       is_valid: true,
       model_used: "url-sniffer (0ms)",
       project_tag: "NEW_UNCLASSIFIED",
-      entity_target: "外部雲端資源 (待指定客戶)",
-      target_purpose: `登記外部專案參考資源 [${category}]`,
-      action_taken: `分享雲端參考鏈結與資料 (${category})`,
-      update_log: `使用者分享外部雲端參考資源：\n• 資源鏈結: ${url}\n• 資源類型: ${category}\n• 請於審核時確認歸屬專案並批准歸檔至專案附件庫。`,
+      entity_target: "待指派客戶 (可後續維護)",
+      target_purpose: "",
+      action_taken: `登記專案參考資源`,
+      update_log: "", // 💡 依使用者指令：流水帳預設為空，選填！沒填絕不寫入 Memory_Pool_Raw
       attachment_links: attLink,
       confidence_score: 1.0
     };

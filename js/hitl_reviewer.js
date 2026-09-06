@@ -49,22 +49,13 @@ class HitlReviewer {
   }
 
   /**
-   * 向 GAS 拉取尚待 HITL 審核的卡片列表 (agent_status === PENDING_REVIEW)
-   * 🌟 方案 A 穿透直連：優先採用 sendCloudGasGetRequest 提取雲端 SSOT 真值
+   * 向後端拉取尚待 HITL 審核的卡片列表 (agent_status === PENDING_REVIEW)
+   * ⚡ 自適應架構：本地模式直讀 SQLite 0ms 秒出卡（無需等同步），雲端模式走 GAS
    */
   async fetchPendingCards() {
     try {
-      let res = null;
-      if (typeof sendCloudGasGetRequest === "function") {
-        try {
-          res = await sendCloudGasGetRequest("Memory_Pool_Raw");
-        } catch (cloudErr) {
-          console.warn("[HitlReviewer] 雲端直連待審隊列異常，嘗試本地降級:", cloudErr);
-        }
-      }
-      if (!res || res.status !== "success" || !Array.isArray(res.data)) {
-        res = await sendGasGetRequest("Memory_Pool_Raw");
-      }
+      // ⚡ 與寫入端 100% 對齊：優先自適應調用 sendGasGetRequest (本地模式直讀 SQLite 0ms)
+      const res = await sendGasGetRequest("Memory_Pool_Raw");
       if (res && res.status === "success" && Array.isArray(res.data) && res.data.length > 1) {
         const rows = res.data;
         const pendingList = [];
@@ -201,11 +192,11 @@ class HitlReviewer {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "delete_record", sheet: "Memory_Pool_Raw", id: targetId })
           });
-        } else if (decision === "APPROVE") {
+        } else if (decision === "APPROVE" || decision === "EDIT") {
           await fetch(`${CONFIG.LOCAL_API_BASE}/action`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "review_action", log_id: targetId, decision: "APPROVE" })
+            body: JSON.stringify({ action: "review_action", log_id: targetId, decision: decision, data: extraData.data })
           });
         }
       } catch (locErr) {

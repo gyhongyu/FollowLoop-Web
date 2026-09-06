@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>FollowLoop - 雙表 CRM 專案看板 (V5.5 大一統人類審核窗口與鏈結附件極簡版)</title>
+  <meta name="description" content="FollowLoop 閉環工程 AI 助理 - V5.5 支援大一統 HITL 審核彈窗、極速目的網頁標題嗅探、外鏈直接歸檔專案附件與流水帳選填零污染">
+
+  <!-- PWA & Mobile Web App Meta Tags -->
+  <meta name="theme-color" content="#0B0F19">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FollowLoop">
+  <meta name="application-name" content="FollowLoop">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- PWA Manifest & Icons (file 協議下安全跳過 manifest 防止 CORS 告警) -->
+  <script>
+    if (location.protocol.startsWith('http')) {
+      var link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = 'manifest.json';
+      document.head.appendChild(link);
+    }
+  </script>
+  <link rel="apple-touch-icon" href="img/icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="img/icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="img/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="img/icons/icon-512.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="img/icons/favicon-16.png">
+  <link rel="shortcut icon" href="favicon.ico">
+
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/main.css?v=5.4.0">
+  <link rel="stylesheet" href="css/components.css?v=5.4.0">
+  <link rel="stylesheet" href="css/responsive.css?v=5.4.0">
+  <link rel="stylesheet" href="css/themes.css?v=5.4.0">
+
+  <!-- 🔒 強制 Toast 浮動於右下角，徹底杜絕遮蔽中央彈窗標題與右上角關閉按鈕 -->
+  <style id="fl-toast-position-override">
+    #toast-container, .toast-container {
+      position: fixed !important;
+      bottom: 24px !important;
+      right: 24px !important;
+      top: auto !important;
+      left: auto !important;
+      transform: none !important;
+      z-index: 9999999 !important;
+      display: flex !important;
+      flex-direction: column-reverse !important;
+      gap: 8px !important;
+      pointer-events: none !important;
+      max-width: 340px !important;
+    }
+    .toast-item {
+      pointer-events: auto !important;
+      min-width: 200px !important;
+      max-width: 320px !important;
+      padding: 8px 14px !important;
+      font-size: 0.82rem !important;
+      font-weight: 500 !important;
+      border-radius: 8px !important;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45) !important;
+    }
+  </style>
+
+  <!-- 主題與 LOGO 初始化 (阻塞式載入，防止 FOUC 閃爍，per-user key 支援) -->
+  <script>
+    (function(){
+      var userId = '';
+      try {
+        var sess = sessionStorage.getItem('FL_AUTH_SESSION');
+        if (sess) { userId = JSON.parse(sess).id || ''; }
+      } catch(e) {}
+      var key = userId ? ('fl_theme_' + userId) : 'fl_theme';
+      var t = localStorage.getItem(key) || 'midnight';
+      document.documentElement.setAttribute('data-theme', t);
+      document.addEventListener('DOMContentLoaded', function(){
+        var img = document.getElementById('brand-logo-img');
+        if (img && t === 'light-slate') img.src = 'img/deepbluelogo_foxlink-m.png';
+      });
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- 全屏登入遮罩 (未登入時覆蓋整個畫面) -->
+  <div class="login-overlay active" id="login-overlay">
+    <div class="login-card">
+      <div class="login-logo">🔐</div>
+      <h2 class="login-title">FollowLoop Web Gate</h2>
+      <p class="login-subtitle">請輸入帳號與密碼以進入系統 (V5.2 本地極速版)</p>
+      <div class="login-form-group">
+        <label class="login-label" for="login-id">帳號 (ID)</label>
+        <input type="text" class="login-input" id="login-id" placeholder="請輸入帳號" autocomplete="username">
+      </div>
+      <div class="login-form-group">
+        <label class="login-label" for="login-password">密碼 (Password)</label>
+        <input type="password" class="login-input" id="login-password" placeholder="請輸入密碼" autocomplete="current-password">
+      </div>
+      <div class="login-remember">
+        <input type="checkbox" id="login-remember-me">
+        <label for="login-remember-me">記住我</label>
+      </div>
+      <button class="login-btn" id="login-submit-btn">🚀 登入</button>
+      <div class="login-error hidden" id="login-error-msg"></div>
+    </div>
+  </div>
+
+  <!-- 全屏 Loading Blocking 遮罩 (純 Promise 驅動) -->
+  <div class="fullscreen-loading-overlay" id="fullscreen-loading-overlay">
+    <div class="loading-box">
+      <div class="loading-spinner"></div>
+      <div class="loading-title" id="loading-overlay-title">正在載入 Projects_Master 與 Raw 數據庫...</div>
+      <div class="loading-subtext" id="loading-overlay-subtext">請稍候，雙表 1-to-N 關聯與動態 GroupBy 聚合進行中</div>
+    </div>
+  </div>
+
+  <div class="app-container" id="app-main-container" style="display: none;">
+    <!-- Header 導覽列 (Sticky 凍結頂端) -->
+    <header class="app-header sticky-header">
+      <div class="brand-logo" style="display: flex; align-items: center;">
+        <img src="img/wlogo_foxlink_s.png" id="brand-logo-img" alt="FOXLINK Logo" style="height: 32px; width: auto; margin-right: 14px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+        <div>
+          <h1 class="brand-title" style="margin: 0; font-size: 1.25rem;">FollowLoop Web Gate</h1>
+          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V5.4-LocalSpeed</span>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <!-- 默認 active 頁籤：⬆️ 直傳門閥 -->
+        <button class="nav-tab-btn active" data-tab="ingestion" title="素材直傳門閥">
+          <span class="nav-icon">⬆️</span><span class="nav-text-desktop"> 直傳門閥</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="hitl" title="情報與名片審核關卡">
+          <span class="nav-icon">👮</span><span class="nav-text-desktop"> HITL 審核</span>
+          <span class="badge-count" id="hitl-badge-count">0</span>
+        </button>
+        <!-- 分頁名稱：📊 雙表 CRM 專案看板 -->
+        <button class="nav-tab-btn" data-tab="liveview" title="雙表 CRM 專案看板">
+          <span class="nav-icon">📊</span><span class="nav-text-desktop"> 雙表 CRM 專案看板</span>
+        </button>
+      </nav>
+
+      <div class="header-right-controls" style="display: flex; align-items: center; gap: 6px;">
+        <!-- 🤖 打工仔狀態圖標按鈕 (待命睡覺 💤 / 運作中亮色閃爍 ⚡ / 有日誌，點擊開抽屜) -->
+        <button id="ai-task-status-pill" class="header-icon-pill" style="cursor: pointer; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.35); padding: 4px 8px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; height: 32px; min-width: 32px;" title="打工仔 AI 狀態 (點擊查看任務日誌)">
+          <span id="ai-task-status-icon" style="font-size: 1.15rem; line-height: 1;">💤</span>
+          <span id="ai-task-status-text" class="nav-text-desktop" style="margin-left: 5px; font-size: 0.8rem; font-weight: 600;">待機中</span>
+        </button>
+
+        <!-- ☁️ 數據庫連線狀態 (本地極速 ⚡ / 待同步 🟠 / 雲端 GAS ☁️) - 支援點擊立即強制同步 -->
+        <div id="cloud-sync-status" class="header-icon-pill" onclick="if(window.triggerCloudSyncNow) window.triggerCloudSyncNow();" style="cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 32px; min-width: 32px; padding: 4px 10px; border-radius: 8px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; transition: all 0.25s ease;" title="數據庫連線狀態：探測中... (點擊可強制回寫 Google Sheet)">
+          <span id="cloud-sync-icon" style="font-size: 1.15rem; line-height: 1;">⚡</span>
+          <span id="cloud-sync-text" class="nav-text-desktop" style="margin-left: 5px; font-size: 0.8rem; font-weight: 600;">本地極速</span>
+        </div>
+
+        <!-- Admin Panel 齒輪按鈕 -->
+        <button class="btn-admin-panel" id="admin-panel-btn" title="外觀與設定">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- 🤖 LLM 任務隊列與即時日誌浮窗抽屜 (Global AI Task Console) -->
+    <div id="ai-log-drawer" class="modal-card" style="display: none; position: fixed; top: 68px; right: 20px; width: 480px; max-width: 92vw; max-height: 520px; z-index: 1500; box-shadow: 0 20px 50px rgba(0,0,0,0.25); border: 1px solid var(--border-glass); padding: 18px; flex-direction: column; background: var(--bg-card-glass); backdrop-filter: blur(20px); border-radius: 14px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px; margin-bottom: 12px;">
+        <div style="font-weight: 700; font-size: 1rem; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.15rem;">🤖</span> 打工仔 LLM 即時任務監控台
+        </div>
+        <button id="ai-log-drawer-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem; transition: color 0.2s;" title="關閉">✕</button>
+      </div>
+      <div id="ai-log-list" style="flex: 1; overflow-y: auto; font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace; font-size: 0.82rem; line-height: 1.6; color: var(--text-main); display: flex; flex-direction: column; gap: 6px;">
+        <div style="color: var(--text-muted);">目前無執行中任務。</div>
+      </div>
+    </div>
+
+    <!-- 主內容區 (三大模組 Single Page Application) -->
+    <main>
+
+      <!-- --------------------------------------------------------------------
+           模組一：多端 Raw Data 上傳門閥 (Ingestion Gate) — 預設開啟
+           -------------------------------------------------------------------- -->
+      <section class="tab-content-section active" id="tab-section-ingestion">
+        <div class="ingestion-grid">
+          
+          <!-- 大檔與影音直傳區 -->
+          <div class="card-panel">
+            <h2 class="panel-title">
+              <span class="icon">📁</span> 多模態 AI 解析 ✕ 二階段大檔直傳
+            </h2>
+            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 18px;">
+              📸 <b>圖片/截圖</b> 與 🎙️ <b>語音 (≤25MB)</b> 自動由打工仔大模型前端提煉；超大影音 (100MB~200MB+) 自動切換二階段直傳 Google Drive。
+            </p>
+
+            <div class="dropzone" id="dropzone">
+              <div class="dropzone-icon">☁️</div>
+              <div class="dropzone-text">點擊選取檔案、拖曳至此處，或直接按 <b>Ctrl+V 貼上截圖</b></div>
+              <input type="file" id="file-input" style="display: none;" multiple accept="audio/*,video/*,image/*,.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.csv,.cad,.dwg,.zip,.rar,.7z">
+            </div>
+
+            <div class="progress-container" id="progress-container">
+              <div class="progress-header">
+                <span id="progress-text">準備上傳 (0%)...</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-bar-fill"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 麥克風錄音與快捷速記 -->
+          <div class="card-panel">
+            <h2 class="panel-title">
+              <span class="icon">🎙️</span> 麥克風錄音與快捷速記
+            </h2>
+
+            <div class="recorder-box">
+              <button class="mic-btn" id="mic-btn" title="按一下開始/停止錄音">🎤</button>
+              <div class="timer-text" id="timer-text">00:00</div>
+              <span style="font-size: 0.8rem; color: var(--text-subtle); margin-top: 6px;">錄製完成自動調用打工仔 Audio 多模態大模型提煉</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="note-textarea">💡 補充會議紀錄 / 文字速記 / 圖片備註</label>
+              <textarea class="note-textarea" id="note-textarea" placeholder="例如：「今天與 VVDN 採購 Manikandan 進行線上記者會討論，結論提及交期...」"></textarea>
+            </div>
+
+            <button class="btn-primary" id="submit-note-btn" style="width: 100%; justify-content: center;">
+              <span>🚀 傳送至 FollowLoop 門閥</span>
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------------------
+           模組二：人工審核與澄清卡片關卡 (HITL Review Gate)
+           -------------------------------------------------------------------- -->
+      <section class="tab-content-section" id="tab-section-hitl">
+        <div class="hitl-container">
+          <div class="hitl-header-bar">
+            <div>
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px; flex-wrap: wrap;">
+                <h2 class="panel-title hitl-main-title" style="margin-bottom: 0;">👮 HITL 審核關卡</h2>
+                <!-- 🪪 HITL 專屬子頁籤 Switcher -->
+                <div class="hitl-sub-nav">
+                  <button type="button" class="hitl-sub-btn active" id="hitl-sub-tab-logs">
+                    <span class="btn-icon">📜</span><span class="btn-text-desktop"> 商業情報</span>
+                    <span class="hitl-sub-badge" id="hitl-sub-badge-logs">0</span>
+                  </button>
+                  <button type="button" class="hitl-sub-btn" id="hitl-sub-tab-cards">
+                    <span class="btn-icon">🪪</span><span class="btn-text-desktop"> 名片入庫</span>
+                    <span class="hitl-sub-badge" id="hitl-sub-badge-cards">0</span>
+                  </button>
+                </div>
+              </div>
+              <p class="section-desc-text" style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+                打工仔大模型自動提煉商務情報與名片。名片批准時可自動打上 Foxlink 公務標籤並無縫入庫 Google 通訊錄。
+              </p>
+            </div>
+            <button class="btn-primary mobile-icon-only-btn" id="hitl-refresh-btn" style="padding: 8px 14px; font-size: 0.88rem;" title="重新整理待審清單">
+              <span class="btn-icon">🔄</span><span class="btn-text-desktop"> 重新整理</span>
+            </button>
+          </div>
+
+          <!-- 動態卡片網格 -->
+          <div class="hitl-card-grid" id="hitl-card-grid">
+            <!-- 由 app.js 自動渲染 -->
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------------------
+           模組三：💎 雙表 CRM 專案看板 (Projects_Master + Raw)
+           -------------------------------------------------------------------- -->
+      <section class="tab-content-section" id="tab-section-liveview">
+        <!-- Sticky 控制過濾列 (滾動時凍結在頂部 Header 下方) -->
+        <div class="liveview-toolbar sticky-toolbar">
+          <div>
+            <h2 class="panel-title" style="margin-bottom: 4px;">💎 雙表 CRM 專案看板 (Projects_Master + Raw)</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              高優先權 (🟢)、低優先權 (🟠)、暫停行動 (🔴)、未分類待完善 (⚪)
+            </p>
+          </div>
+
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div class="search-input-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="kpi-search-input" placeholder="搜尋專案對象、商機名稱或動態內文...">
+            </div>
+
+            <div class="liveview-toolbar-row2">
+              <!-- 下拉選單擴充：支援四大專案等級分類 -->
+              <select class="form-control" id="kpi-filter-select" style="width: auto; min-width: 180px;">
+                <option value="ALL">🌐 全部專案項目</option>
+                <option value="HIGH">🟢 主動進行 / 高優先權</option>
+                <option value="LOW">🟠 被動進行 / 低優先權</option>
+                <option value="PAUSED">🔴 暫停行動</option>
+                <option value="UNCLASSIFIED">⚪ 待完善 / 未分類新專案</option>
+              </select>
+
+              <!-- ➕ 新增專案按鈕 -->
+              <button class="btn-primary mobile-icon-only-btn" id="btn-add-project" onclick="if(window.projectManager) window.projectManager.openCreateModal()" style="padding: 10px 18px; font-weight: 600; white-space: nowrap; background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);" title="新增 CRM 專案主檔">
+                <span class="btn-icon">➕</span><span class="btn-text-desktop"> 新增專案</span>
+              </button>
+
+              <button class="btn-primary mobile-icon-only-btn" id="liveview-refresh-btn" style="padding: 10px 16px;" title="重新載入數據庫">
+                <span class="btn-icon">🔄</span><span class="btn-text-desktop"> 載入雙表</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 專案 KPI 網格容器 -->
+        <div class="kpi-grid" id="kpi-grid-container">
+          <!-- 由 live_view.js 與 app.js 自動渲染 -->
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toast 訊息顯示區 -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Modal 1: 專案詳情與 21 欄 CRM 寬螢幕雙欄彈窗 -->
+  <div class="modal-backdrop" id="detail-modal-backdrop">
+    <div class="modal-card crm-modal-wide">
+      
+      <!-- 頂部 Header -->
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 1; min-width: 0;">
+          <h3 class="modal-title" id="detail-entity-title" title="點擊展開/收起完整專案名稱" onclick="this.classList.toggle('expanded')" style="font-size: 1.25rem; font-weight: 700; color: var(--text-heading); cursor: pointer;">專案詳情</h3>
+          <span class="crm-badge crm-badge-tag" id="detail-project-tag-sub">Tag: General</span>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="btn-card-action btn-card-edit mobile-icon-only-btn" title="編輯專案主檔" onclick="if(window.projectManager && window.currentActiveKpiItemCode) window.projectManager.openEditModal(window.currentActiveKpiItemCode)"><span class="btn-icon">✏️</span><span class="btn-text-desktop"> 編輯專案</span></button>
+          <button class="btn-card-action btn-card-delete mobile-icon-only-btn" title="刪除專案主檔" onclick="if(window.projectManager && window.currentActiveKpiItemCode) { const itm = window.liveView?.viewRows?.find(r => r.itemCode === window.currentActiveKpiItemCode); window.projectManager.deleteProject(window.currentActiveKpiItemCode, itm?.accountName, itm?.projectName); }"><span class="btn-icon">🗑️</span><span class="btn-text-desktop"> 刪除專案</span></button>
+          <button class="modal-close" onclick="closeDetailModal()" title="關閉視窗">✕</button>
+        </div>
+      </div>
+
+      <!-- 手機版專屬 3 分頁導航列 -->
+      <div class="crm-mobile-segmented-tabs" id="crm-mobile-segmented-tabs">
+        <button class="crm-mobile-tab-btn active" id="mob-tab-info" onclick="switchMobileDetailTab('info')">
+          <span>📋 專案資料</span>
+        </button>
+        <button class="crm-mobile-tab-btn" id="mob-tab-timeline" onclick="switchMobileDetailTab('timeline')">
+          <span>📜 流水帳動態</span>
+        </button>
+        <button class="crm-mobile-tab-btn" id="mob-tab-attachments" onclick="switchMobileDetailTab('attachments')">
+          <span>🔗 專案附件</span>
+          <span class="crm-tab-badge" id="mob-detail-attachments-count">0</span>
+        </button>
+      </div>
+
+      <!-- Modal 可滾動雙欄主體 -->
+      <div class="crm-modal-body" id="crm-detail-modal-body" data-mobile-active-tab="info">
+        
+        <!-- 左欄：21 欄 CRM 專案核心資產 -->
+        <div class="crm-col-left">
+          
+          <div class="crm-hero-banner">
+            <div class="crm-hero-badges">
+              <span class="priority-badge" id="detail-priority-badge">🟢 高優先權</span>
+              <span class="crm-badge crm-badge-stage" id="detail-stage-badge">RFQ</span>
+              <span class="crm-badge crm-badge-tag" id="detail-account-tag-badge">Item_2</span>
+            </div>
+            
+            <div class="crm-hero-metrics">
+              <div class="metric-item">
+                <span class="metric-label">💵 預估年營收</span>
+                <span class="metric-value highlight-gold" id="detail-revenue-val">-</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">🎯 勝率</span>
+                <span class="metric-value highlight-green" id="detail-probability-val">-</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">📦 預估年用量</span>
+                <span class="metric-value" id="detail-quantity-val">-</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="crm-info-card">
+            <div class="crm-card-title">🎯 對方訴求與目的</div>
+            <div class="crm-card-content" id="detail-target-purpose-val">-</div>
+          </div>
+
+          <div class="crm-info-card leverage-card">
+            <div class="crm-card-title">💡 我方切入點</div>
+            <div class="crm-card-content" id="detail-leverage-val">-</div>
+          </div>
+
+          <div class="crm-info-card advantage-card">
+            <div class="crm-card-title">⚡ 我方優勢</div>
+            <div class="crm-card-content" id="detail-advantages-val">-</div>
+          </div>
+
+          <div class="crm-attr-grid">
+            <div class="attr-item">
+              <span class="attr-label">👤 主要對象 (DRI):</span>
+              <span class="attr-val" id="detail-primary-contact-val">-</span>
+            </div>
+            <div class="attr-item">
+              <span class="attr-label">👔 負責業務 (Owner):</span>
+              <span class="attr-val" id="detail-owner-val">-</span>
+            </div>
+            <div class="attr-item">
+              <span class="attr-label">🏢 終端品牌 (Brand):</span>
+              <span class="attr-val" id="detail-end-customer-val">-</span>
+            </div>
+            <div class="attr-item">
+              <span class="attr-label">🏭 系統廠 (Tier-1):</span>
+              <span class="attr-val" id="detail-tier1-partner-val">-</span>
+            </div>
+            <div class="attr-item">
+              <span class="attr-label">🧭 商機來源:</span>
+              <span class="attr-val" id="detail-lead-source-val">-</span>
+            </div>
+            <div class="attr-item">
+              <span class="attr-label">📊 專案狀態:</span>
+              <span class="attr-val" id="detail-status-val">ACTIVE</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 右欄：動態時間軸與附件清單 -->
+        <div class="crm-col-right">
+          
+          <div class="crm-right-tabs-bar">
+            <button class="crm-right-tab-btn active" id="tab-btn-timeline" onclick="switchRightColTab('timeline')">
+              <span>📜 動態歷程時間軸</span>
+            </button>
+            <button class="crm-right-tab-btn" id="tab-btn-attachments" onclick="switchRightColTab('attachments')">
+              <span>🔗 專案資源與雲端鏈結</span>
+              <span class="crm-tab-badge" id="detail-attachments-count">0</span>
+            </button>
+          </div>
+
+          <!-- Panel 1: 動態歷程時間軸面板 -->
+          <div class="crm-right-panel active" id="right-panel-timeline">
+            <div class="timeline-add-box">
+              <div class="timeline-add-header">
+                <span>➕ 新增最新跟進紀錄</span>
+                <span class="draft-pill" style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3);">即時自動同步</span>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="new-timeline-input" class="form-control" placeholder="例如：「2026/08/25 完成技術交流與方案確認」">
+                <button class="btn-primary mobile-icon-only-btn" id="btn-add-timeline-log" style="padding: 8px 14px; white-space: nowrap;">
+                  <span class="btn-icon">➕</span><span class="btn-text-desktop"> 新增</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="timeline-section-header">
+              <span style="font-weight: 700; color: var(--text-heading); font-size: 0.92rem;">📜 動態歷程時間軸 (最新在最上面)</span>
+              <span style="font-size: 0.74rem; color: var(--text-muted);">支援本地 SQLite 0ms 讀寫與雲端 GAS 雙模態同步</span>
+            </div>
+
+            <div class="timeline-spine-container" id="detail-timeline-spine">
+              <!-- app.js 自動渲染 -->
+            </div>
+          </div>
+
+          <!-- Panel 2: 專案資源與雲端鏈結面板 (Projects_Attachments) -->
+          <div class="crm-right-panel" id="right-panel-attachments" style="display: none;">
+            <div class="timeline-add-box">
+              <div class="timeline-add-header">
+                <span>➕ 新增專案資源鏈結</span>
+                <span class="draft-pill" style="background:rgba(16,185,129,0.15); color:#10b981; border:1px solid rgba(16,185,129,0.3);">即時自動同步</span>
+              </div>
+              <div class="attachment-input-grid">
+                <input type="text" id="new-link-title-input" class="form-control" placeholder="資源名稱 (如：『戰略聯盟評估表』)">
+                <input type="text" id="new-link-url-input" class="form-control" placeholder="網址 (如：https://docs.google.com/...)">
+                <button class="btn-primary" id="btn-add-attachment-link" style="padding: 8px 14px; white-space: nowrap;">
+                  <span>新增</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="timeline-section-header">
+              <span style="font-weight: 700; color: var(--text-heading); font-size: 0.92rem;">🔗 專案雲端資源清單 (Projects_Attachments)</span>
+              <span style="font-size: 0.74rem; color: var(--text-muted);">編輯/作廢即時寫入數據庫</span>
+            </div>
+
+            <div class="attachments-grid-container" id="detail-attachments-grid">
+              <!-- app.js 自動渲染 -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal 2: 專案主檔 CRM CRUD 彈窗 (ProjectModal 新增/編輯) -->
+  <div class="modal-backdrop" id="project-modal-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 1300; align-items: center; justify-content: center;">
+    <div class="project-modal-card" id="project-modal">
+      <div class="modal-header" style="padding: 18px 24px; border-bottom: 1px solid var(--border-glass); background: var(--bg-panel-deep); display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="modal-title" id="pm-modal-title" style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+          ➕ 新增 CRM 專案主檔
+        </h3>
+        <button class="modal-close" onclick="window.projectManager.closeModal()" title="關閉視窗" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.3rem;">✕</button>
+      </div>
+
+      <div class="project-modal-body">
+        <div class="pm-form-grid">
+          
+          <div class="pm-section-divider">📌 1. 專案主檔識別與對象</div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-account">🏢 客戶名稱 (Account Name) <span style="color:#ef4444;">*</span></label>
+            <input type="text" class="form-control" id="pm-input-account" placeholder="例如：VVDN Technologies / DELTA">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-project">🚀 專案名稱 (Project Name) <span style="color:#ef4444;">*</span></label>
+            <input type="text" class="form-control" id="pm-input-project" placeholder="例如：Phison SSD OEM 代工專案">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-tag">🏷️ 專案標籤 (Project Tag - PK) <span style="color:#ef4444;">*</span></label>
+            <input type="text" class="form-control" id="pm-input-tag" placeholder="例如：Item_14_01">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-account-tag">🏷️ 客戶代號 (Account Tag)</label>
+            <input type="text" class="form-control" id="pm-input-account-tag" placeholder="例如：Item_14">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-contact">👤 主要窗口 (Primary Contact)</label>
+            <input type="text" class="form-control" id="pm-input-contact" placeholder="例如：Manikandan M (採購主管)">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-owner">👔 負責業務 (Owner)</label>
+            <input type="text" class="form-control" id="pm-input-owner" value="Michael">
+          </div>
+
+          <div class="pm-section-divider">🎯 2. 階段進展與行動等級</div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-stage">📍 專案階段 (Stage - 12官方字典) <span style="color:#ef4444;">*</span></label>
+            <select class="form-control" id="pm-input-stage">
+              <!-- 由 project_manager.js 動態填充 -->
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-priority">🚦 優先權等級 (Priority) <span style="color:#ef4444;">*</span></label>
+            <select class="form-control" id="pm-input-priority">
+              <option value="HIGH">🟢 High (高優先權 / 主動進行)</option>
+              <option value="LOW">🟠 Low (低優先權 / 被動進行)</option>
+              <option value="PAUSED">🔴 PAUSED (暫停行動)</option>
+            </select>
+          </div>
+
+          <div class="pm-section-divider">💵 3. 商業與財務預估指標</div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-revenue">💵 預估年營收 (Annual Revenue)</label>
+            <input type="text" class="form-control" id="pm-input-revenue" placeholder="例如：$1.5M / 500,000">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-currency">💱 計價幣別 (Currency)</label>
+            <select class="form-control" id="pm-input-currency">
+              <option value="USD">USD (美元)</option>
+              <option value="INR">INR (印度盧比)</option>
+              <option value="NTD">NTD (新台幣)</option>
+              <option value="RMB">RMB (人民幣)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-quantity">📦 預估年用量 (Annual Quantity)</label>
+            <input type="text" class="form-control" id="pm-input-quantity" placeholder="例如：500K pcs / 200,000 sets">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-prob">🎯 預估勝率 (Probability %)</label>
+            <input type="text" class="form-control" id="pm-input-prob" placeholder="例如：75% / 90%">
+          </div>
+
+          <div class="pm-section-divider">⚡ 4. 價值主張與競爭優勢</div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="pm-input-purpose">🎯 對方訴求與目的 (Target Purpose)</label>
+            <input type="text" class="form-control" id="pm-input-purpose" placeholder="例如：尋找印度在地生產的 Cables OEM 與 SSD SMT 代工夥伴">
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="pm-input-leverage">💡 我方切入點 (Our Leverage Point)</label>
+            <input type="text" class="form-control" id="pm-input-leverage" placeholder="例如：正崴印度工廠在地化優勢，可提供快速打樣與完整 SMT/組裝產能">
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="pm-input-advantages">⚡ 我方優勢 (Our Advantages)</label>
+            <input type="text" class="form-control" id="pm-input-advantages" placeholder="例如：一站式製造能力、集團垂直整合與全球採購議價能力">
+          </div>
+
+          <div class="pm-section-divider">🌐 5. 生態鏈與來源</div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-end-customer">🏢 終端品牌客戶 (End Customer / Brand)</label>
+            <input type="text" class="form-control" id="pm-input-end-customer" placeholder="例如：Cisco / Dell / HP">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="pm-input-tier1">🏭 系統整合廠 (Tier-1 Partner)</label>
+            <input type="text" class="form-control" id="pm-input-tier1" placeholder="例如：Foxconn / Flex / Jabil">
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" for="pm-input-source">🧭 商機來源 (Lead Source)</label>
+            <input type="text" class="form-control" id="pm-input-source" placeholder="例如：2026 印度電子展 / 既有客戶轉介 / 主動拜訪">
+          </div>
+
+        </div>
+      </div>
+
+      <div class="project-modal-footer">
+        <button class="btn-draft-discard" style="padding: 9px 18px;" onclick="window.projectManager.closeModal()">✕ 取消</button>
+        <button class="btn-primary" id="pm-submit-btn" style="padding: 9px 24px; font-weight: 600;" onclick="window.projectManager.submitProject()">
+          <span>💾 儲存專案主檔</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: 🤖 HITL 人工審核與修訂情報大一統獨立彈窗 -->
+  <div id="edit-hitl-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1200; align-items: center; justify-content: center;">
+    <div id="edit-hitl-modal" class="modal-card" style="width: 580px; max-width: 92vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
+        <h3 id="modal-hitl-header-title" style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🤖 審核與修訂內容</h3>
+        <button onclick="closeEditModal()" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;" title="關閉視窗">✕</button>
+      </div>
+      <input type="hidden" id="modal-hitl-id">
+      <input type="hidden" id="modal-hitl-source-type">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        
+        <!-- 核心欄位 1: 歸屬專案 -->
+        <div>
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--primary-light); margin-bottom: 4px;">🎯 歸屬專案 (Project Tag) <span style="color:#ef4444;">*</span></label>
+          <select id="modal-hitl-tag" class="form-control" style="font-weight: 600; width: 100%;"></select>
+        </div>
+
+        <!-- 核心欄位 2: 資源 / 主題標題 -->
+        <div>
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">🏷️ 資源 / 主題標題 (Title) <span style="color:#ef4444;">*</span></label>
+          <input type="text" id="modal-hitl-title" class="form-control" placeholder="請輸入標題或摘要說明...">
+        </div>
+
+        <!-- 核心欄位 3: 資源網址 (若為鏈結或附件時自動顯示) -->
+        <div id="modal-hitl-url-group">
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">🔗 資源網址 / 鏈結 (URL)</label>
+          <input type="url" id="modal-hitl-url" class="form-control" placeholder="https://...">
+        </div>
+
+        <!-- 核心欄位 4: 補充商業流水帳 (明確標註選填) -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 0.82rem; font-weight: 700; color: var(--text-heading);">📝 補充流水帳記要 (Notes / Log)</label>
+            <span style="font-size: 0.74rem; color: var(--text-muted); background: rgba(148, 163, 184, 0.15); padding: 2px 6px; border-radius: 4px;">選填 Optional (留空則不寫入流水帳)</span>
+          </div>
+          <textarea id="modal-hitl-log" class="form-control" style="height: 90px; resize: vertical; line-height: 1.5; font-size: 0.88rem;" placeholder="(選填) 若有具體會議進展或背景想補充可填寫，留空則純儲存附件，不寫入時間線。"></textarea>
+        </div>
+
+        <!-- 折疊式進階 CRM 屬性 (非必填，預設收起) -->
+        <details id="modal-hitl-advanced-details" style="font-size: 0.82rem; color: var(--text-muted); background: rgba(0,0,0,0.15); padding: 8px 12px; border-radius: 6px; border: 1px dashed var(--border-card-light);">
+          <summary style="cursor: pointer; font-weight: 600; color: var(--text-subtle);">⚙️ 進階選填：指定客戶 / 商機目的 (點擊展開，亦可後續於專案卡維護)</summary>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+            <div>
+              <label style="display: block; font-size: 0.76rem; margin-bottom: 2px;">🏢 權責對象 / 客戶名稱</label>
+              <input type="text" id="modal-hitl-entity" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;" placeholder="例如：SSSTC / VVDN">
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.76rem; margin-bottom: 2px;">💡 商機目的 / 潛在需求</label>
+              <input type="text" id="modal-hitl-purpose" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;" placeholder="例如：新案評估">
+            </div>
+          </div>
+          <div style="margin-top: 8px;">
+            <label style="display: block; font-size: 0.76rem; margin-bottom: 2px;">🚀 最新行動與進展</label>
+            <input type="text" id="modal-hitl-action" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;" placeholder="例如：安排樣品測試">
+          </div>
+        </details>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; border-top: 1px solid var(--border-card-light); padding-top: 14px;">
+          <button class="btn-draft-discard" style="padding: 8px 16px; font-size: 0.88rem;" onclick="closeEditModal()">✕ 取消</button>
+          <button class="btn-primary" style="padding: 8px 20px; font-size: 0.88rem; font-weight: 600;" onclick="submitEditCard()">
+            <span>💾 儲存修訂並批准入庫</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3.5: 🪪 名片獨立審核與修改彈窗 -->
+  <div id="edit-card-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1200; align-items: center; justify-content: center;">
+    <div id="edit-card-modal" class="modal-card" style="width: 540px; max-width: 92vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🪪 審核與修訂名片資料</h3>
+        <button onclick="closeEditCardModal()" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;" title="關閉">✕</button>
+      </div>
+      <input type="hidden" id="modal-card-id">
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">👤 姓名 <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="modal-card-name" class="form-control" placeholder="聯絡人姓名">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">🏢 公司機構</label>
+            <input type="text" id="modal-card-company" class="form-control" placeholder="公司或單位名稱">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">👔 職稱 / 頭銜</label>
+            <input type="text" id="modal-card-title" class="form-control" placeholder="職稱如 VP / Director / 經理">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📞 電話 / 手機</label>
+            <input type="text" id="modal-card-phone" class="form-control" placeholder="+91 99020 06090">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">✉️ 電子郵件</label>
+            <input type="email" id="modal-card-email" class="form-control" placeholder="name@company.com">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📍 地址 / 據點</label>
+            <input type="text" id="modal-card-address" class="form-control" placeholder="公司地址">
+          </div>
+        </div>
+
+        <div>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📝 備註事項</label>
+          <textarea id="modal-card-notes" class="form-control" style="height: 70px; resize: vertical;" placeholder="業務範疇、會談重點或備註"></textarea>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; border-top: 1px solid var(--border-card-light); padding-top: 14px;">
+          <button class="btn-draft-discard" style="padding: 8px 16px; font-size: 0.88rem;" onclick="closeEditCardModal()">✕ 取消</button>
+          <button class="btn-edit" style="padding: 8px 16px; font-size: 0.88rem; font-weight: 600;" onclick="submitEditBusinessCard(false)">
+            <span>💾 僅更新待審資料</span>
+          </button>
+          <button class="btn-primary" style="padding: 8px 20px; font-size: 0.88rem; font-weight: 600;" onclick="submitEditBusinessCard(true)">
+            <span>✓ 儲存並批准入庫</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3.6: 🔍 名片原圖燈箱放大彈窗 (Card Lightbox) -->
+  <div id="card-lightbox-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 2000; align-items: center; justify-content: center;" onclick="closeCardLightbox()">
+    <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center;" onclick="event.stopPropagation()">
+      <button onclick="closeCardLightbox()" style="position: absolute; top: -38px; right: 0; background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer;">✕ 關閉</button>
+      <img id="card-lightbox-img" src="" alt="名片高解析度原圖" style="max-width: 88vw; max-height: 80vh; object-fit: contain; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.2);">
+      <div style="margin-top: 12px;">
+        <a id="card-lightbox-link" href="" target="_blank" style="color: var(--primary-light); font-size: 0.88rem; text-decoration: underline;">在新分頁中檢視 Google Drive 原始圖檔 ↗</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: 🔗 專案資源編輯獨立彈窗 -->
+  <div id="edit-attachment-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1200; align-items: center; justify-content: center;">
+    <div id="edit-attachment-modal" class="modal-card" style="width: 440px; max-width: 90vw; padding: 22px; margin: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-heading);">✏️ 編輯專案資源鏈結</h3>
+        <button onclick="onCloseEditAttachmentModal()" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✕</button>
+      </div>
+      <input type="hidden" id="edit-att-kpi-id">
+      <input type="hidden" id="edit-att-link-id">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">資源名稱</label>
+          <input type="text" id="modal-edit-att-title" class="form-control" placeholder="例如：『戰略聯盟評估表』">
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">雲端網址 (URL)</label>
+          <input type="text" id="modal-edit-att-url" class="form-control" placeholder="https://docs.google.com/...">
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px;">
+          <button class="btn-draft-discard" style="padding: 6px 14px; font-size: 0.85rem;" onclick="onCloseEditAttachmentModal()">✕ 取消</button>
+          <button class="btn-primary" style="padding: 6px 16px; font-size: 0.85rem;" onclick="onSaveEditAttachmentModal()">💾 儲存修訂</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 5: 🎙️ 語音錄音/轉發 4 選 1 分流彈窗 -->
+  <div id="audio-category-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1300; align-items: center; justify-content: center;">
+    <div class="modal-card" style="width: 420px; max-width: 92vw; padding: 22px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+          <span>🎙️</span> 選擇語音類型 (即刻分流)
+        </h3>
+        <button id="audio-cat-close-btn" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✕</button>
+      </div>
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">
+        請選擇本段錄音性質，系統將自動直傳 Google Drive 專屬錄音箱，0 污染正式專案庫：
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="btn-card-action audio-cat-btn" data-cat="meeting" style="padding: 12px 16px; font-size: 0.9rem; justify-content: flex-start; text-align: left;">
+          <span style="font-size: 1.2rem; margin-right: 8px;">🏢</span>
+          <div>
+            <b>1. 會議語音記錄 (Meeting)</b>
+            <div style="font-size: 0.74rem; color: var(--text-subtle);">現場客戶多方會議、技術探討</div>
+          </div>
+        </button>
+        <button class="btn-card-action audio-cat-btn" data-cat="call" style="padding: 12px 16px; font-size: 0.9rem; justify-content: flex-start; text-align: left;">
+          <span style="font-size: 1.2rem; margin-right: 8px;">📞</span>
+          <div>
+            <b>2. 客戶通話記錄 (Call)</b>
+            <div style="font-size: 0.74rem; color: var(--text-subtle);">雙向商務通話、電話跟進溝通</div>
+          </div>
+        </button>
+        <button class="btn-card-action audio-cat-btn" data-cat="memo" style="padding: 12px 16px; font-size: 0.9rem; justify-content: flex-start; text-align: left;">
+          <span style="font-size: 1.2rem; margin-right: 8px;">🗣️</span>
+          <div>
+            <b>3. 個人出差速記 (Memo)</b>
+            <div style="font-size: 0.74rem; color: var(--text-subtle);">出差靈感、個人待辦與備忘錄音</div>
+          </div>
+        </button>
+        <button class="btn-card-action audio-cat-btn" data-cat="raw" style="padding: 12px 16px; font-size: 0.9rem; justify-content: flex-start; text-align: left; border: 1px dashed var(--border-card-light);">
+          <span style="font-size: 1.2rem; margin-right: 8px;">⏳</span>
+          <div>
+            <b>4. 不分類待本地轉寫 (Unclassified)</b>
+            <div style="font-size: 0.74rem; color: var(--text-subtle);">先存起來，回辦公室再由本地 AI 處理</div>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 6: ⚡ 快捷素材分類與人類覆寫確認彈窗 -->
+  <div id="quick-category-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1300; align-items: center; justify-content: center;">
+    <div class="modal-card" style="width: 440px; max-width: 92vw; padding: 22px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+          <span>📦</span> 素材分流確認
+        </h3>
+        <button id="quick-cat-close-btn" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✕</button>
+      </div>
+      <div id="quick-cat-preview-info" style="font-size: 0.85rem; color: var(--text-main); margin-bottom: 14px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;"></div>
+      <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">請確認上傳目標箱：</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+        <button class="btn-card-action quick-cat-option" data-key="PROJECT_DOCS" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start; border-color: #6366f1; color: #818cf8;">📄 專案計劃/業務文檔</button>
+        <button class="btn-card-action quick-cat-option" data-key="VOUCHERS" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start;">🧾 報銷單據/發票</button>
+        <button class="btn-card-action quick-cat-option" data-key="CARDS_DOUBLE" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start; border-color: #3b82f6; color: #60a5fa;">🔄 雙面名片 (合拼為1筆)</button>
+        <button class="btn-card-action quick-cat-option" data-key="CARDS_SINGLE" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start; border-color: #10b981; color: #10b981;">🪪 單面名片 (獨立建檔)</button>
+        <button class="btn-card-action quick-cat-option" data-key="CHAT_SCREENSHOTS" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start;">💬 承諾/對話截圖</button>
+        <button class="btn-card-action quick-cat-option" data-key="LINKS" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start; border-color: #06b6d4; color: #22d3ee;">🌐 網址鏈結/網頁截圖</button>
+        <button class="btn-card-action quick-cat-option" data-key="TRAVEL_TRACKS" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start;">📍 導航/合影/佐證</button>
+        <button class="btn-card-action quick-cat-option" data-key="UNCLASSIFIED" style="padding: 8px 10px; font-size: 0.82rem; justify-content: flex-start; border-color: #a855f7; color: #c084fc;">📦 暫不分類/快速直傳</button>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-card-light); padding-top: 12px;">
+        <span id="quick-cat-timer-label" style="font-size: 0.78rem; color: var(--text-subtle);">請點選目標箱直接上傳：</span>
+        <div style="display:flex; gap: 8px;">
+          <button id="quick-cat-cancel-btn" class="btn-draft-discard" style="padding: 6px 14px; font-size: 0.82rem;">取消</button>
+          <button id="quick-cat-confirm-btn" class="btn-primary" style="padding: 6px 18px; font-size: 0.82rem;">立刻直傳</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Panel 側面板 -->
+  <div id="admin-panel-backdrop"></div>
+  <div id="admin-panel">
+    <div class="admin-panel-header">
+      <div class="admin-panel-title">⚙️ 外觀與設定</div>
+      <button class="admin-panel-close" id="admin-panel-close-btn" title="關閉">✕</button>
+    </div>
+
+    <div>
+      <div class="admin-section-label">🎨 配色主題</div>
+      <div class="theme-cards-grid" id="theme-cards-container"></div>
+    </div>
+
+    <!-- 🤖 OpenRouter 打工仔中央模型總帳設定 -->
+    <div id="openrouter-settings-container"></div>
+
+    <div style="margin-top: 18px;">
+      <div class="admin-section-label">📲 行動裝置 / App 模式</div>
+      <div id="pwa-status-container"></div>
+    </div>
+  </div>
+
+  <!-- PDF 解析核心 (PDF.js) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+  </script>
+
+  <!-- Application Scripts (V5.4 專案附件卡片極簡與防破格治理版) -->
+  <script src="js/config.js?v=5.4.0"></script>
+  <script src="js/openrouter-worker.js?v=5.4.0"></script>
+  <script src="js/openrouter_extractor.js?v=5.4.0"></script>
+  <script src="js/admin_panel.js?v=5.4.0"></script>
+  <script src="js/drive_uploader.js?v=5.4.0"></script>
+  <script src="js/hitl_reviewer.js?v=5.4.0"></script>
+  <script src="js/live_view.js?v=5.4.0"></script>
+  <script src="js/project_manager.js?v=5.4.0"></script>
+  <script src="js/auth.js?v=5.4.0"></script>
+  <!-- Application Modules (V5.4 高內聚模組化架構) -->
+  <script src="js/modules/ai_task_logger.js?v=5.4.0"></script>
+  <script src="js/modules/draft_manager.js?v=5.4.0"></script>
+  <script src="js/modules/ingestion_gate.js?v=5.4.0"></script>
+  <script src="js/modules/hitl_card_modal.js?v=5.4.0"></script>
+  <script src="js/modules/hitl_log_modal.js?v=5.4.0"></script>
+  <script src="js/modules/crm_detail_modal.js?v=5.4.0"></script>
+  <script src="js/modules/share_target.js?v=5.4.0"></script>
+  <!-- Application Core Controller -->
+  <script src="js/app.js?v=5.4.0"></script>
+  <script src="js/background-pipeline.js?v=5.4.0"></script>
+
+  <!-- PWA Service Worker 安全註冊與即時熱更新機制 -->
+  <script>
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js')
+          .then(function(reg) {
+            console.log('[PWA] Service Worker 註冊成功，範圍:', reg.scope);
+            reg.update();
+          })
+          .catch(function(err) {
+            console.warn('[PWA] Service Worker 註冊跳過或失敗:', err);
+          });
+
+        var refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+          if (refreshing) return;
+          refreshing = true;
+          console.log('[PWA] 偵測到新版本已就緒，自動重新載入頁面...');
+          window.location.reload();
+        });
+      });
+    }
+  </script>
+
+</body>
+</html>
