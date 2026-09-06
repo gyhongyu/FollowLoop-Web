@@ -424,8 +424,15 @@ class LiveView {
         const pTag = String(row[1] || "").trim();
         let title = String(row[2] || "").trim();
         let url = String(row[3] || "").trim();
-        const category = String(row[4] || "Web Link").trim();
+        let category = String(row[4] || "Web Link").trim();
         const createdAt = row[5] || new Date().toISOString();
+
+        // 欄位倒置容錯自癒：若 url 欄位非網址，而 category 欄位是 http/https 網址，自動對調歸位
+        if ((!url.startsWith("http://") && !url.startsWith("https://")) &&
+            (category.startsWith("http://") || category.startsWith("https://"))) {
+          url = category;
+          category = "Google Drive";
+        }
 
         const attDeleted = (drafts.attachmentsDeleted || []).includes(linkId);
         if (attDeleted || !url || title.startsWith("[DELETED]") || category === "DELETED") return;

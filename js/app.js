@@ -1,10 +1,13 @@
 /**
- * FollowLoop-Web SPA 主控制與 DOM 事件驅動腳本 (app.js - V5.3 模組化極速版)
+ * FollowLoop-Web SPA 主控制與 DOM 事件驅動腳本 (app.js)
  * 核心調度：Auth 登入 / Tab 導航 / 專案卡片列表渲染 / 通用 Toast / 雲端狀態監控
  */
 
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log(`[FollowLoop-Web] 應用程式初始化 (V5.3 模組化架構)... 版本: ${CONFIG.VERSION}`);
+  // 自動嗅探當前版本真值並動態注入頂部 Brand Badge
+  autoSyncBrandVersion();
+
+  console.log(`[FollowLoop-Web] 應用程式初始化... 版本: ${CONFIG.VERSION}`);
   
   // 0. 優先極速探測本地 SQLite 服務 (127.0.0.1:8765)，確保登入與看板第一時間走 0ms 本地直連
   if (typeof detectLocalBackend === "function") {
@@ -340,3 +343,24 @@ window.addEventListener("beforeunload", (e) => {
     return e.returnValue;
   }
 });
+
+/**
+ * 自動嗅探當前版本真值並動態注入頂部 Brand Badge
+ * 徹底告別人工硬編碼遺漏：依託 CONFIG.VERSION (自動自當前檔名或 title 嗅探)，動態替換標章版本號
+ */
+function autoSyncBrandVersion() {
+  try {
+    const badge = document.querySelector(".brand-badge");
+    if (!badge || !CONFIG || !CONFIG.VERSION) return;
+
+    const currentText = badge.textContent.trim();
+    if (/V\d+\.\d+/i.test(currentText)) {
+      badge.textContent = currentText.replace(/V\d+\.\d+/i, CONFIG.VERSION);
+    } else {
+      badge.textContent = `${CONFIG.VERSION}-LocalSpeed`;
+    }
+    console.log(`[VersionSync] 頂部標章自動同步為: ${badge.textContent}`);
+  } catch (e) {
+    console.warn("[VersionSync] 自動對齊異常:", e);
+  }
+}

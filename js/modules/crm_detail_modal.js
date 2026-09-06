@@ -642,13 +642,12 @@ function renderProjectAttachments(item) {
             </a>
           </div>
           <div class="attachment-card-footer">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span class="attachment-category-badge">${att.category}</span>
+            <div class="attachment-card-status">
               ${isDraftBadge}
             </div>
-            <div style="display: flex; gap: 6px;">
-              <button class="btn-timeline-action-icon edit" title="編輯資源名稱與網址 (暫存本地)" onclick="onEditAttachmentLink('${item.id}', '${att.linkId}')">✏️</button>
-              <button class="btn-timeline-action-icon delete" title="作廢此筆資源鏈結 (暫存本地)" onclick="onDeleteAttachmentLink('${item.id}', '${att.linkId}')">🗑️</button>
+            <div class="attachment-card-actions">
+              <button class="btn-timeline-action-icon edit" title="編輯資源名稱與網址" onclick="onEditAttachmentLink('${item.id}', '${att.linkId}')">✏️</button>
+              <button class="btn-timeline-action-icon delete" title="作廢此筆資源鏈結" onclick="onDeleteAttachmentLink('${item.id}', '${att.linkId}')">🗑️</button>
             </div>
           </div>
         </div>

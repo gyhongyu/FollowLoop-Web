@@ -385,10 +385,9 @@ window.onApproveCard = async function (logId) {
             `ATT_${Date.now()}_${randSuffix}`,
             selectedTag,
             links[0].title || "來源附件",
+            links[0].url || "",
             links[0].category || "Google Drive",
-            links[0].url,
-            nowStr,
-            "Michael Chen"
+            nowStr
           ];
           sendGasRequest("batch_append_raw", {
             sheet: "Projects_Attachments",

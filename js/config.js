@@ -2,9 +2,23 @@
  * FollowLoop-Web 中央配置檔
  * 包含 GAS Web App URL, SPREADSHEET_ID 與系統常數
  */
+// 🌟 全域版本真值自動探針 (SSOT)
+function getAutoAppVersion() {
+  try {
+    const path = (typeof window !== "undefined" && window.location && window.location.pathname) || "";
+    const match = path.match(/FollowLoop-web-(V\d+\.\d+)/i);
+    if (match) return match[1];
+    if (typeof document !== "undefined" && document.title) {
+      const tMatch = document.title.match(/(V\d+\.\d+)/i);
+      if (tMatch) return tMatch[1];
+    }
+  } catch (e) {}
+  return "V5.4";
+}
+
 const CONFIG = {
   APP_TITLE: "FollowLoop 閉環工程 AI 助理",
-  VERSION: "v1.2.0-Draft-SSOT",
+  VERSION: getAutoAppVersion(),
   
   // 權威 雙 GAS Web App 網址配置 (恪守 dual_gas_url_contract_guard 天條)
   // 1. Google Sheets 後端網關 (Universal_GAS_Gateway v5.0 - Strict SSOT)
@@ -311,9 +325,8 @@ async function sendGasGetRequest(sheetName = "Memory_Pool_Raw") {
         return data;
       }
     } catch (localErr) {
-      console.warn("⚠️ 本地服務讀取異常，自動切換至雲端 GAS 讀取:", localErr);
-      CONFIG.IS_LOCAL_MODE = false;
-      updateBackendStatusUI(false);
+      console.warn("⚠️ 本地服務讀取異常，本單次請求平滑備援至雲端 GAS 讀取:", localErr);
+      // 保持靜默平滑備援，避免單次網絡抖動永久切斷本地極速
     }
   }
 
