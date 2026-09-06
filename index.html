@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>FollowLoop - 雙表 CRM 專案看板 (V5.2 本地極速與雙模態自適應版)</title>
-  <meta name="description" content="FollowLoop 閉環工程 AI 助理 - V5.2 支援本地 SQLite 0ms 極速讀寫、Google Apps Script 雲端雙模態自動降級、名片獨立審核與 8 大物理場景直傳">
+  <title>FollowLoop - 雙表 CRM 專案看板 (V5.5 大一統人類審核窗口與鏈結附件極簡版)</title>
+  <meta name="description" content="FollowLoop 閉環工程 AI 助理 - V5.5 支援大一統 HITL 審核彈窗、極速目的網頁標題嗅探、外鏈直接歸檔專案附件與流水帳選填零污染">
 
   <!-- PWA & Mobile Web App Meta Tags -->
   <meta name="theme-color" content="#0B0F19">
@@ -37,10 +37,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="css/main.css?v=5.2.4">
-  <link rel="stylesheet" href="css/components.css?v=5.2.4">
-  <link rel="stylesheet" href="css/responsive.css?v=5.2.4">
-  <link rel="stylesheet" href="css/themes.css?v=5.2.4">
+  <link rel="stylesheet" href="css/main.css?v=5.4.0">
+  <link rel="stylesheet" href="css/components.css?v=5.4.0">
+  <link rel="stylesheet" href="css/responsive.css?v=5.4.0">
+  <link rel="stylesheet" href="css/themes.css?v=5.4.0">
 
   <!-- 🔒 強制 Toast 浮動於右下角，徹底杜絕遮蔽中央彈窗標題與右上角關閉按鈕 -->
   <style id="fl-toast-position-override">
@@ -129,7 +129,7 @@
         <img src="img/wlogo_foxlink_s.png" id="brand-logo-img" alt="FOXLINK Logo" style="height: 32px; width: auto; margin-right: 14px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
         <div>
           <h1 class="brand-title" style="margin: 0; font-size: 1.25rem;">FollowLoop Web Gate</h1>
-          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V5.2-LocalSpeed</span>
+          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V5.4-LocalSpeed</span>
         </div>
       </div>
 
@@ -641,40 +641,62 @@
     </div>
   </div>
 
-  <!-- Modal 3: 🤖 HITL 人工審核與修訂情報獨立彈窗 -->
+  <!-- Modal 3: 🤖 HITL 人工審核與修訂情報大一統獨立彈窗 -->
   <div id="edit-hitl-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1200; align-items: center; justify-content: center;">
     <div id="edit-hitl-modal" class="modal-card" style="width: 580px; max-width: 92vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
-        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🤖 審核與修訂情報卡片</h3>
+        <h3 id="modal-hitl-header-title" style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🤖 審核與修訂內容</h3>
         <button onclick="closeEditModal()" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;" title="關閉視窗">✕</button>
       </div>
       <input type="hidden" id="modal-hitl-id">
+      <input type="hidden" id="modal-hitl-source-type">
       <div style="display: flex; flex-direction: column; gap: 14px;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <div>
-            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">🎯 歸屬專案</label>
-            <select id="modal-hitl-tag" class="form-control" style="font-weight: 600;"></select>
+        
+        <!-- 核心欄位 1: 歸屬專案 -->
+        <div>
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--primary-light); margin-bottom: 4px;">🎯 歸屬專案 (Project Tag) <span style="color:#ef4444;">*</span></label>
+          <select id="modal-hitl-tag" class="form-control" style="font-weight: 600; width: 100%;"></select>
+        </div>
+
+        <!-- 核心欄位 2: 資源 / 主題標題 -->
+        <div>
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">🏷️ 資源 / 主題標題 (Title) <span style="color:#ef4444;">*</span></label>
+          <input type="text" id="modal-hitl-title" class="form-control" placeholder="請輸入標題或摘要說明...">
+        </div>
+
+        <!-- 核心欄位 3: 資源網址 (若為鏈結或附件時自動顯示) -->
+        <div id="modal-hitl-url-group">
+          <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--text-heading); margin-bottom: 4px;">🔗 資源網址 / 鏈結 (URL)</label>
+          <input type="url" id="modal-hitl-url" class="form-control" placeholder="https://...">
+        </div>
+
+        <!-- 核心欄位 4: 補充商業流水帳 (明確標註選填) -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label style="font-size: 0.82rem; font-weight: 700; color: var(--text-heading);">📝 補充流水帳記要 (Notes / Log)</label>
+            <span style="font-size: 0.74rem; color: var(--text-muted); background: rgba(148, 163, 184, 0.15); padding: 2px 6px; border-radius: 4px;">選填 Optional (留空則不寫入流水帳)</span>
           </div>
-          <div>
-            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">🏢 權責對象 / 客戶名稱</label>
-            <input type="text" id="modal-hitl-entity" class="form-control" placeholder="例如：SSSTC / VVDN / Delta">
+          <textarea id="modal-hitl-log" class="form-control" style="height: 90px; resize: vertical; line-height: 1.5; font-size: 0.88rem;" placeholder="(選填) 若有具體會議進展或背景想補充可填寫，留空則純儲存附件，不寫入時間線。"></textarea>
+        </div>
+
+        <!-- 折疊式進階 CRM 屬性 (非必填，預設收起) -->
+        <details id="modal-hitl-advanced-details" style="font-size: 0.82rem; color: var(--text-muted); background: rgba(0,0,0,0.15); padding: 8px 12px; border-radius: 6px; border: 1px dashed var(--border-card-light);">
+          <summary style="cursor: pointer; font-weight: 600; color: var(--text-subtle);">⚙️ 進階選填：指定客戶 / 商機目的 (點擊展開，亦可後續於專案卡維護)</summary>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+            <div>
+              <label style="display: block; font-size: 0.76rem; margin-bottom: 2px;">🏢 權責對象 / 客戶名稱</label>
+              <input type="text" id="modal-hitl-entity" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;" placeholder="例如：SSSTC / VVDN">
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.76rem; margin-bottom: 2px;">💡 商機目的 / 潛在需求</label>
+              <input type="text" id="modal-hitl-purpose" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;" placeholder="例如：新案評估">
+            </div>
           </div>
-        </div>
-
-        <div>
-          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">💡 商機目的 / 潛在需求</label>
-          <input type="text" id="modal-hitl-purpose" class="form-control" placeholder="例如：新案樣品送樣與規格確認">
-        </div>
-
-        <div>
-          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">🚀 最新行動與進展</label>
-          <input type="text" id="modal-hitl-action" class="form-control" placeholder="例如：現場回答缺失原因並安排樣品測試">
-        </div>
-
-        <div>
-          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📝 商業流水帳記要</label>
-          <textarea id="modal-hitl-log" class="form-control" style="height: 100px; resize: vertical; line-height: 1.5; font-size: 0.88rem;" placeholder="請條列具體事實與商業進展..."></textarea>
-        </div>
+          <div style="margin-top: 8px;">
+            <label style="display: block; font-size: 0.76rem; margin-bottom: 2px;">🚀 最新行動與進展</label>
+            <input type="text" id="modal-hitl-action" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;" placeholder="例如：安排樣品測試">
+          </div>
+        </details>
 
         <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; border-top: 1px solid var(--border-card-light); padding-top: 14px;">
           <button class="btn-draft-discard" style="padding: 8px 16px; font-size: 0.88rem;" onclick="closeEditModal()">✕ 取消</button>
@@ -889,27 +911,27 @@
     }
   </script>
 
-  <!-- Application Scripts (V5.2 本地極速與雙模態升級版 - 方案 A 穿透直連) -->
-  <script src="js/config.js?v=5.2.4"></script>
-  <script src="js/openrouter-worker.js?v=5.2.4"></script>
-  <script src="js/openrouter_extractor.js?v=5.2.4"></script>
-  <script src="js/admin_panel.js?v=5.2.4"></script>
-  <script src="js/drive_uploader.js?v=5.2.4"></script>
-  <script src="js/hitl_reviewer.js?v=5.2.4"></script>
-  <script src="js/live_view.js?v=5.2.4"></script>
-  <script src="js/project_manager.js?v=5.2.4"></script>
-  <script src="js/auth.js?v=5.2.4"></script>
-  <!-- Application Modules (V5.3 高內聚模組化架構) -->
-  <script src="js/modules/ai_task_logger.js?v=5.3.0"></script>
-  <script src="js/modules/draft_manager.js?v=5.3.0"></script>
-  <script src="js/modules/ingestion_gate.js?v=5.3.0"></script>
-  <script src="js/modules/hitl_card_modal.js?v=5.3.0"></script>
-  <script src="js/modules/hitl_log_modal.js?v=5.3.0"></script>
-  <script src="js/modules/crm_detail_modal.js?v=5.3.0"></script>
-  <script src="js/modules/share_target.js?v=5.3.0"></script>
+  <!-- Application Scripts (V5.4 專案附件卡片極簡與防破格治理版) -->
+  <script src="js/config.js?v=5.4.0"></script>
+  <script src="js/openrouter-worker.js?v=5.4.0"></script>
+  <script src="js/openrouter_extractor.js?v=5.4.0"></script>
+  <script src="js/admin_panel.js?v=5.4.0"></script>
+  <script src="js/drive_uploader.js?v=5.4.0"></script>
+  <script src="js/hitl_reviewer.js?v=5.4.0"></script>
+  <script src="js/live_view.js?v=5.4.0"></script>
+  <script src="js/project_manager.js?v=5.4.0"></script>
+  <script src="js/auth.js?v=5.4.0"></script>
+  <!-- Application Modules (V5.4 高內聚模組化架構) -->
+  <script src="js/modules/ai_task_logger.js?v=5.4.0"></script>
+  <script src="js/modules/draft_manager.js?v=5.4.0"></script>
+  <script src="js/modules/ingestion_gate.js?v=5.4.0"></script>
+  <script src="js/modules/hitl_card_modal.js?v=5.4.0"></script>
+  <script src="js/modules/hitl_log_modal.js?v=5.4.0"></script>
+  <script src="js/modules/crm_detail_modal.js?v=5.4.0"></script>
+  <script src="js/modules/share_target.js?v=5.4.0"></script>
   <!-- Application Core Controller -->
-  <script src="js/app.js?v=5.3.0"></script>
-  <script src="js/background-pipeline.js?v=5.2.4"></script>
+  <script src="js/app.js?v=5.4.0"></script>
+  <script src="js/background-pipeline.js?v=5.4.0"></script>
 
   <!-- PWA Service Worker 安全註冊與即時熱更新機制 -->
   <script>
