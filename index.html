@@ -95,7 +95,7 @@
     <div class="login-card">
       <div class="login-logo">🔐</div>
       <h2 class="login-title">FollowLoop Web Gate</h2>
-      <p class="login-subtitle">請輸入帳號與密碼以進入系統 (V5.2 本地極速版)</p>
+      <p class="login-subtitle">請輸入帳號與密碼以進入系統 (<span id="login-version-text">V5.5</span> 雲端大一統審核版)</p>
       <div class="login-form-group">
         <label class="login-label" for="login-id">帳號 (ID)</label>
         <input type="text" class="login-input" id="login-id" placeholder="請輸入帳號" autocomplete="username">
@@ -129,7 +129,7 @@
         <img src="img/wlogo_foxlink_s.png" id="brand-logo-img" alt="FOXLINK Logo" style="height: 32px; width: auto; margin-right: 14px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
         <div>
           <h1 class="brand-title" style="margin: 0; font-size: 1.25rem;">FollowLoop Web Gate</h1>
-          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V5.4-LocalSpeed</span>
+          <span class="brand-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);">V5.5-CloudDirect</span>
         </div>
       </div>
 
@@ -937,7 +937,7 @@
   <script>
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('./sw.js?v=5.5.0')
           .then(function(reg) {
             console.log('[PWA] Service Worker 註冊成功，範圍:', reg.scope);
             reg.update();

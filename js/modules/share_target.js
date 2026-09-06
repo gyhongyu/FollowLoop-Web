@@ -75,12 +75,51 @@ async function handleIncomingSharedFiles() {
     if (incomingUrl && !isRealBinaryFile) {
       try {
         const linkTitle = item.title || rawText.replace(incomingUrl, '').trim() || incomingUrl;
-        showToast(`🌐 偵測到網址分享，正在儲存至 Links 箱: ${incomingUrl}`, 'info');
-        await driveUploader.uploadUrlShortcut(incomingUrl, linkTitle);
-        showToast(`🎉 網址捷徑已安全存入 Links/ 資料夾！`, 'success');
+        console.log(`[ShareTarget] 偵測到網址分享: ${incomingUrl}, title: ${linkTitle}`);
+        showToast(`🌐 收到網址分享，正在開啟大一統審核窗口...`, 'info');
+
+        // 切換到審核頁籤
+        const hitlBtn = document.querySelector('.nav-tab-btn[data-tab="hitl"]');
+        if (hitlBtn) hitlBtn.click();
+
+        // 構建待審核卡片物件
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const cleanTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        const randSuffix = (Math.random().toString(36) + "0000").slice(2, 6);
+        const logId = `LOG_LINK_${Date.now()}_${randSuffix}`;
+
+        const newCard = {
+          entry_id: logId,
+          log_id: logId,
+          timestamp: cleanTimestamp,
+          source_type: "🔗 系統分享網址",
+          project_tag: "NEW_UNCLASSIFIED",
+          entity_target: "未指定客戶 (待編輯)",
+          target_purpose: linkTitle,
+          action_taken: "登記專案參考資源",
+          update_log: "", // 外鏈預設流水帳為空 (選填)
+          raw_text: incomingUrl,
+          attachment_links: JSON.stringify([{ title: linkTitle, url: incomingUrl }]),
+          confidence_score: "1.0",
+          status: "PENDING_REVIEW"
+        };
+
+        // 注入待審佇列
+        if (window.hitlReviewer) {
+          window.hitlReviewer.addCardDirectly(newCard);
+        }
+
+        // 立即彈出大一統審核彈窗供使用者指派專案與確認
+        setTimeout(() => {
+          if (typeof window.onEditCardModal === "function") {
+            window.onEditCardModal(logId);
+          }
+        }, 300);
+
       } catch (urlErr) {
-        console.error('[ShareTarget] 網址儲存失敗:', urlErr);
-        showToast(`❌ 網址存入失敗: ${urlErr.message}`, 'danger');
+        console.error('[ShareTarget] 處理網址分享失敗:', urlErr);
+        showToast(`❌ 網址處理失敗: ${urlErr.message}`, 'danger');
       }
       continue;
     }

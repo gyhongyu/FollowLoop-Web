@@ -124,8 +124,20 @@ function updateBackendStatusUI(isLocal, pendingCount = 0) {
   }
 }
 
-// 輔助函式：極速探測本地服務 (1000ms 內判定是否走本地 127.0.0.1:8765，支援 1 次自癒重試)
+// 輔助函式：極速探測本地服務 (僅限本機 localhost/127.0.0.1，手機或 GitHub Pages 100% 絕對純雲端)
 async function detectLocalBackend(isRetry = false) {
+  // 🔒 手機端與 GitHub Pages 物理防禦：0 請求本地，直接走純雲端 GAS
+  const isOnlineHost = typeof window !== "undefined" && window.location && (
+    window.location.hostname.includes("github.io") ||
+    window.location.protocol === "https:" && !window.location.hostname.includes("localhost")
+  );
+  const isMobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isOnlineHost || isMobile) {
+    CONFIG.IS_LOCAL_MODE = false;
+    updateBackendStatusUI(false);
+    return false;
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1000);
