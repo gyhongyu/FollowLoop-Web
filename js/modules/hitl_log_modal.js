@@ -506,6 +506,13 @@ window.onEditCardModal = function (logId) {
     });
     tagSelect.innerHTML = optionsHtml;
 
+    // 📱 同步更新現代化單行選擇按鈕文字
+    const pickerTextEl = document.getElementById("modal-hitl-tag-picker-text");
+    if (pickerTextEl) {
+      const selectedOption = tagSelect.options[tagSelect.selectedIndex];
+      pickerTextEl.textContent = selectedOption ? selectedOption.textContent : "請選擇歸屬專案...";
+    }
+
     tagSelect.onchange = function() {
       const entityInput = document.getElementById("modal-hitl-entity");
       if (this.value === "NEW_UNCLASSIFIED") {
@@ -515,6 +522,11 @@ window.onEditCardModal = function (logId) {
         if (matched && matched.acct && entityInput) {
           entityInput.value = matched.acct;
         }
+      }
+      const pText = document.getElementById("modal-hitl-tag-picker-text");
+      if (pText) {
+        const opt = tagSelect.options[tagSelect.selectedIndex];
+        pText.textContent = opt ? opt.textContent : "請選擇歸屬專案...";
       }
     };
   }
@@ -713,7 +725,92 @@ window.onRejectCard = async function (logId) {
   }
 };
 
+// =========================================================================
+// 📱 現代化專案單行抽屜選擇器 (Project Bottom Sheet Picker Controller)
+// =========================================================================
+let _currentPickerTargetSelectId = null;
+
+window.openProjectPickerSheet = function(targetSelectId = "modal-hitl-tag") {
+  _currentPickerTargetSelectId = targetSelectId;
+  const targetSelect = document.getElementById(targetSelectId);
+  const backdrop = document.getElementById("global-project-sheet-backdrop");
+  const itemsContainer = document.getElementById("project-sheet-items-container");
+  const searchInput = document.getElementById("project-sheet-search-input");
+
+  if (!targetSelect || !backdrop || !itemsContainer) return;
+
+  if (searchInput) searchInput.value = "";
+
+  // 渲染所有選項
+  _renderPickerList("");
+
+  backdrop.classList.add("active");
+  if (searchInput) {
+    setTimeout(() => searchInput.focus(), 150);
+  }
+};
+
+window.closeProjectPickerSheet = function() {
+  const backdrop = document.getElementById("global-project-sheet-backdrop");
+  if (backdrop) backdrop.classList.remove("active");
+  _currentPickerTargetSelectId = null;
+};
+
+window.filterProjectPickerItems = function(query) {
+  _renderPickerList(query.trim().toLowerCase());
+};
+
+function _renderPickerList(filterKeyword = "") {
+  const targetSelect = document.getElementById(_currentPickerTargetSelectId || "modal-hitl-tag");
+  const itemsContainer = document.getElementById("project-sheet-items-container");
+  if (!targetSelect || !itemsContainer) return;
+
+  const currentVal = targetSelect.value;
+  const options = Array.from(targetSelect.options);
+
+  let html = "";
+  let matchCount = 0;
+
+  options.forEach((opt) => {
+    const val = opt.value;
+    const text = opt.textContent;
+    const isNew = val === "NEW_UNCLASSIFIED";
+    const isSelected = val === currentVal;
+
+    if (filterKeyword && !text.toLowerCase().includes(filterKeyword) && !val.toLowerCase().includes(filterKeyword)) {
+      return;
+    }
+
+    matchCount++;
+    const itemClass = `project-sheet-item ${isNew ? 'is-new-opt' : ''} ${isSelected ? 'selected' : ''}`;
+    html += `
+      <button type="button" class="${itemClass}" onclick="window.selectProjectFromSheet('${val}')">
+        <span class="project-sheet-item-label">${text}</span>
+        ${isSelected ? '<span class="project-sheet-item-check">✓</span>' : ''}
+      </button>
+    `;
+  });
+
+  if (matchCount === 0) {
+    html = `<div style="text-align: center; padding: 28px 12px; color: var(--text-muted); font-size: 0.85rem;">🔍 查無符合的專案項目</div>`;
+  }
+
+  itemsContainer.innerHTML = html;
+}
+
+window.selectProjectFromSheet = function(selectedValue) {
+  const targetSelect = document.getElementById(_currentPickerTargetSelectId || "modal-hitl-tag");
+  if (targetSelect) {
+    targetSelect.value = selectedValue;
+    if (typeof targetSelect.onchange === "function") {
+      targetSelect.onchange();
+    }
+  }
+  window.closeProjectPickerSheet();
+};
+
 // 🌐 全域安全掛載函式
 window.initHitlModule = initHitlModule;
 window.renderHitlCards = renderHitlCards;
 window.getAvailableProjectsList = getAvailableProjectsList;
+

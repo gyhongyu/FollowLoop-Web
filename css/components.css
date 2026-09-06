@@ -515,7 +515,7 @@
   top: 0; left: 0; width: 100vw; height: 100vh;
   background: var(--bg-modal-backdrop);
   backdrop-filter: blur(8px);
-  z-index: 999;
+  z-index: 2500 !important;
   display: none;
   align-items: center;
   justify-content: center;
@@ -2164,6 +2164,201 @@ html[data-theme="light-slate"] .btn-draft-discard:hover {
   border: 1px solid rgba(99, 102, 241, 0.25);
   font-size: 0.84rem;
 }
+
+/* ==========================================================================
+   📱 現代商務單行專案選擇抽屜 (Project Bottom Sheet Picker)
+   徹底告別 Android 原生 select 巨大字體與反人類折行
+   ========================================================================== */
+.project-picker-btn {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  background: var(--bg-panel-deep, #151c2e);
+  border: 1px solid var(--border-card-light, rgba(255, 255, 255, 0.15));
+  border-radius: var(--radius-sm, 8px);
+  color: var(--text-heading, #f1f5f9);
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.project-picker-btn:hover {
+  border-color: var(--primary-light, #818cf8);
+}
+
+.project-picker-btn .picker-selected-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  padding-right: 8px;
+}
+
+.project-picker-btn .picker-arrow {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  flex-shrink: 0;
+}
+
+/* 抽屜遮罩層 */
+.project-sheet-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 3000 !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.project-sheet-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 抽屜主體卡片 (從底部滑出) */
+.project-sheet-panel {
+  background: var(--bg-dark-surface, #0f172a);
+  border-top: 1px solid var(--border-glass-glow, rgba(99, 102, 241, 0.35));
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+}
+
+.project-sheet-backdrop.active .project-sheet-panel {
+  transform: translateY(0);
+}
+
+.project-sheet-header {
+  padding: 14px 16px 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-card-light, rgba(255, 255, 255, 0.08));
+}
+
+.project-sheet-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-heading, #f1f5f9);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-sheet-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* 搜尋列 */
+.project-sheet-search {
+  padding: 10px 16px 6px 16px;
+}
+
+.project-sheet-search input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--bg-panel-deep, #1e293b);
+  border: 1px solid var(--border-card-light, rgba(255, 255, 255, 0.15));
+  border-radius: var(--radius-sm, 8px);
+  color: var(--text-heading, #f1f5f9);
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+
+.project-sheet-search input:focus {
+  outline: none;
+  border-color: var(--primary-light, #818cf8);
+}
+
+/* 列表容器 */
+.project-sheet-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 列表單項 (強制極限單行截斷) */
+.project-sheet-item {
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-main, #cbd5e1);
+  font-size: 0.84rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  box-sizing: border-box;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.project-sheet-item:hover,
+.project-sheet-item:active {
+  background: var(--bg-btn-ghost, rgba(255, 255, 255, 0.08));
+}
+
+.project-sheet-item.selected {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+  font-weight: 700;
+}
+
+.project-sheet-item.is-new-opt {
+  color: #34d399;
+  font-weight: 700;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+  margin-bottom: 4px;
+}
+
+.project-sheet-item-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.project-sheet-item-check {
+  margin-left: 8px;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
 
 
 

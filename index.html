@@ -506,7 +506,7 @@
   </div>
 
   <!-- Modal 2: 專案主檔 CRM CRUD 彈窗 (ProjectModal 新增/編輯) -->
-  <div class="modal-backdrop" id="project-modal-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 1300; align-items: center; justify-content: center;">
+  <div class="modal-backdrop" id="project-modal-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 2500; align-items: center; justify-content: center;">
     <div class="project-modal-card" id="project-modal">
       <div class="modal-header" style="padding: 18px 24px; border-bottom: 1px solid var(--border-glass); background: var(--bg-panel-deep); display: flex; justify-content: space-between; align-items: center;">
         <h3 class="modal-title" id="pm-modal-title" style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
@@ -642,7 +642,7 @@
   </div>
 
   <!-- Modal 3: 🤖 HITL 人工審核與修訂情報大一統獨立彈窗 -->
-  <div id="edit-hitl-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1200; align-items: center; justify-content: center;">
+  <div id="edit-hitl-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 2500; align-items: center; justify-content: center;">
     <div id="edit-hitl-modal" class="modal-card" style="width: 580px; max-width: 92vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
         <h3 id="modal-hitl-header-title" style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🤖 審核與修訂內容</h3>
@@ -652,10 +652,14 @@
       <input type="hidden" id="modal-hitl-source-type">
       <div style="display: flex; flex-direction: column; gap: 14px;">
         
-        <!-- 核心欄位 1: 歸屬專案 -->
+        <!-- 核心欄位 1: 歸屬專案 (現代化單行抽屜選擇器，隱藏原生笨重 select) -->
         <div>
           <label style="display: block; font-size: 0.82rem; font-weight: 700; color: var(--primary-light); margin-bottom: 4px;">🎯 歸屬專案 (Project Tag) <span style="color:#ef4444;">*</span></label>
-          <select id="modal-hitl-tag" class="form-control" style="font-weight: 600; width: 100%;"></select>
+          <select id="modal-hitl-tag" style="display: none;"></select>
+          <button type="button" id="modal-hitl-tag-picker-btn" class="project-picker-btn" onclick="window.openProjectPickerSheet('modal-hitl-tag')">
+            <span class="picker-selected-text" id="modal-hitl-tag-picker-text">請選擇歸屬專案...</span>
+            <span class="picker-arrow">▼</span>
+          </button>
         </div>
 
         <!-- 核心欄位 2: 資源 / 主題標題 -->
@@ -709,7 +713,7 @@
   </div>
 
   <!-- Modal 3.5: 🪪 名片獨立審核與修改彈窗 -->
-  <div id="edit-card-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 1200; align-items: center; justify-content: center;">
+  <div id="edit-card-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 2500; align-items: center; justify-content: center;">
     <div id="edit-card-modal" class="modal-card" style="width: 540px; max-width: 92vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
         <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🪪 審核與修訂名片資料</h3>
@@ -900,6 +904,22 @@
     <div style="margin-top: 18px;">
       <div class="admin-section-label">📲 行動裝置 / App 模式</div>
       <div id="pwa-status-container"></div>
+    </div>
+  </div>
+
+  <!-- 📱 現代化專案單行抽屜選擇器 (Global Project Bottom Sheet Picker) -->
+  <div class="project-sheet-backdrop" id="global-project-sheet-backdrop" onclick="if(event.target === this) window.closeProjectPickerSheet();">
+    <div class="project-sheet-panel" id="global-project-sheet-panel">
+      <div class="project-sheet-header">
+        <div class="project-sheet-title">🎯 選擇歸屬專案 (單行極速選取)</div>
+        <button type="button" class="project-sheet-close" onclick="window.closeProjectPickerSheet()">✕</button>
+      </div>
+      <div class="project-sheet-search">
+        <input type="text" id="project-sheet-search-input" placeholder="🔍 輸入關鍵字搜尋客戶或專案 (如 VVDN, DELTA)..." oninput="window.filterProjectPickerItems(this.value)">
+      </div>
+      <div class="project-sheet-list" id="project-sheet-items-container">
+        <!-- 由 JS 動態單行渲染 -->
+      </div>
     </div>
   </div>
 
