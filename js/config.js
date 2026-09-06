@@ -231,16 +231,6 @@ setInterval(() => {
   }
 }, 15000);
 
-// DOM 載入完成後綁定雲朵點擊事件
-document.addEventListener("DOMContentLoaded", () => {
-  const statusContainer = document.getElementById("cloud-sync-status");
-  if (statusContainer) {
-    statusContainer.addEventListener("click", () => {
-      triggerCloudSyncNow();
-    });
-  }
-});
-
 // 輔助函式：取得當前生效的 OpenRouter API Key (優先讀取 localStorage 自訂)
 function getOpenRouterApiKey() {
   return localStorage.getItem("fl_openrouter_key") || CONFIG.OPENROUTER_DEFAULT_KEY;
