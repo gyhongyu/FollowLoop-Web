@@ -268,10 +268,28 @@ function renderHitlCards(cards) {
         } catch (e) {}
       }
 
+      // 輔助函式：清洗客戶名稱法人贅字
+      const cleanAccount = (acct) => {
+        if (!acct) return "";
+        return acct
+          .replace(/\b(Technologies|Private|Limited|Pvt\.?|Ltd\.?|Electronics|India)\b/gi, "")
+          .replace(/[,\-:]+/g, " ")
+          .trim();
+      };
+
+      // 輔助函式：精簡過長專案名稱 (超過 24 字元自動縮寫加省略號)
+      const cleanProjectName = (pname) => {
+        if (!pname) return "未命名專案";
+        const s = pname.trim();
+        return s.length > 24 ? s.slice(0, 23) + "…" : s;
+      };
+
       let optionsHtml = `<option value="NEW_UNCLASSIFIED" ${isUnclassified ? "selected" : ""}>➕ 建立新專案卡 (${nextInfo.nextProjectName})</option>`;
       projectList.forEach((p) => {
         const isSelected = p.tag === currentTag && !isUnclassified;
-        const label = `${p.tag} | ${p.acct ? p.acct + " : " : ""}${p.name}`;
+        const acctDisp = cleanAccount(p.acct);
+        const nameDisp = cleanProjectName(p.name);
+        const label = acctDisp ? `${acctDisp} — ${nameDisp}` : nameDisp;
         optionsHtml += `<option value="${p.tag}" ${isSelected ? "selected" : ""}>${label}</option>`;
       });
 
@@ -462,10 +480,29 @@ window.onEditCardModal = function (logId) {
   const isUnclassified = currentTag === "General" || currentTag === "NEW_UNCLASSIFIED" || currentTag.startsWith("Item_New") || !currentTag;
 
   if (tagSelect) {
+    // 輔助函式：清洗客戶名稱法人贅字
+    const cleanAccount = (acct) => {
+      if (!acct) return "";
+      return acct
+        .replace(/\b(Technologies|Private|Limited|Pvt\.?|Ltd\.?|Electronics|India)\b/gi, "")
+        .replace(/[,\-:]+/g, " ")
+        .trim();
+    };
+
+    // 輔助函式：精簡過長專案名稱 (超過 24 字元自動縮寫加省略號)
+    const cleanProjectName = (pname) => {
+      if (!pname) return "未命名專案";
+      const s = pname.trim();
+      return s.length > 24 ? s.slice(0, 23) + "…" : s;
+    };
+
     let optionsHtml = `<option value="NEW_UNCLASSIFIED" ${isUnclassified ? "selected" : ""}>➕ 建立新專案卡 (${nextInfo.nextProjectName})</option>`;
     projectList.forEach((p) => {
       const isSelected = p.tag === currentTag && !isUnclassified;
-      optionsHtml += `<option value="${p.tag}" ${isSelected ? "selected" : ""}>${p.tag} | ${p.acct ? p.acct + " : " : ""}${p.name}</option>`;
+      const acctDisp = cleanAccount(p.acct);
+      const nameDisp = cleanProjectName(p.name);
+      const label = acctDisp ? `${acctDisp} — ${nameDisp}` : nameDisp;
+      optionsHtml += `<option value="${p.tag}" ${isSelected ? "selected" : ""}>${label}</option>`;
     });
     tagSelect.innerHTML = optionsHtml;
 
