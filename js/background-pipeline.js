@@ -21,6 +21,29 @@ class BackgroundWorkerPipeline {
     this.processingFiles = new Set(); // 正在處理中的 File ID 記憶體鎖
     this.processedFiles = new Set(); // ⚡ 0ms 記憶體已處理查重集合 (0-Relocation SSOT)
     this.cooldownFiles = new Map(); // fileId -> expireTimestamp (低置信度/失敗冷卻 10 分鐘，防死循環空耗 Token)
+
+    // 🛡️ 持久化已處理集合初始化 (跨 F5 重整與會話 0ms 記憶)
+    try {
+      const saved = localStorage.getItem("fl_processed_card_files");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(id => this.processedFiles.add(id));
+        }
+      }
+    } catch (e) {}
+  }
+
+  /**
+   * 標記檔案為已處理並持久化至 localStorage
+   */
+  markFileProcessed(fileId) {
+    if (!fileId) return;
+    this.processedFiles.add(fileId);
+    try {
+      const arr = Array.from(this.processedFiles);
+      localStorage.setItem("fl_processed_card_files", JSON.stringify(arr));
+    } catch (e) {}
   }
 
   /**
@@ -30,12 +53,21 @@ class BackgroundWorkerPipeline {
     if (!fileId) return false;
     if (this.processedFiles.has(fileId)) return true;
 
+    // 0. 比對 localStorage 持久化記錄 (F5 重整後 0ms 快速命中)
+    try {
+      const saved = localStorage.getItem("fl_processed_card_files");
+      if (saved && saved.includes(fileId)) {
+        this.processedFiles.add(fileId);
+        return true;
+      }
+    } catch (e) {}
+
     // 1. 比對前端記憶體總帳 (window.liveView.lastRawData) 的 attachment_links 欄位
     if (window.liveView && Array.isArray(window.liveView.lastRawData)) {
       for (let i = 1; i < window.liveView.lastRawData.length; i++) {
         const attStr = String(window.liveView.lastRawData[i][8] || "");
         if (attStr.includes(fileId)) {
-          this.processedFiles.add(fileId);
+          this.markFileProcessed(fileId);
           return true;
         }
       }
@@ -47,7 +79,7 @@ class BackgroundWorkerPipeline {
         if (card.attachments && Array.isArray(card.attachments)) {
           for (const att of card.attachments) {
             if (att.id === fileId || (att.url && att.url.includes(fileId))) {
-              this.processedFiles.add(fileId);
+              this.markFileProcessed(fileId);
               return true;
             }
           }
@@ -393,10 +425,10 @@ class BusinessCardHandler {
         });
       }
 
-      // 📦 【0 搬移不可變架構】不再搬移實體檔案，直接在記憶體鎖定並登記個人檔案總帳！
+      // 📦 【0 搬移不可變架構】持久化標記已處理檔案 (localStorage + 記憶體雙重防禦)
       for (const file of fileList) {
-        if (this.pipeline && this.pipeline.processedFiles) {
-          this.pipeline.processedFiles.add(file.id);
+        if (context.pipeline && typeof context.pipeline.markFileProcessed === 'function') {
+          context.pipeline.markFileProcessed(file.id); // ⚡ 持久化至 localStorage，F5 後 0ms 命中
         }
         if (typeof sendDriveGasRequest === "function") {
           sendDriveGasRequest("register_file", {
@@ -404,7 +436,7 @@ class BusinessCardHandler {
             filename: file.name,
             category: "BusinessCards",
             retention: "PERMANENT",
-            status: "PENDING"
+            status: "PROCESSED"  // 🛡️ 直接標記為已提煉，杜絕巡檢重複派發
           }).catch(rErr => console.warn(`[BusinessCardHandler] 登記個人檔案總帳略過:`, rErr));
         }
       }

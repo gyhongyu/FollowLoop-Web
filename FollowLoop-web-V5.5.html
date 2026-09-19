@@ -989,7 +989,7 @@
   <script src="js/openrouter_extractor.js?v=5.5.2"></script>
   <script src="js/admin_panel.js?v=5.5.2"></script>
   <script src="js/drive_uploader.js?v=5.5.2"></script>
-  <script src="js/hitl_reviewer.js?v=5.5.2"></script>
+  <script src="js/hitl_reviewer.js?v=5.5.3"></script>
   <script src="js/live_view.js?v=5.5.2"></script>
   <script src="js/project_manager.js?v=5.5.2"></script>
   <script src="js/auth.js?v=5.5.2"></script>
@@ -1003,13 +1003,13 @@
   <script src="js/modules/share_target.js?v=5.5.2"></script>
   <!-- Application Core Controller -->
   <script src="js/app.js?v=5.5.2"></script>
-  <script src="js/background-pipeline.js?v=5.5.2"></script>
+  <script src="js/background-pipeline.js?v=5.5.3"></script>
 
   <!-- PWA Service Worker 安全註冊與即時熱更新機制 -->
   <script>
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js?v=5.5.2')
+        navigator.serviceWorker.register('./sw.js?v=5.5.3')
           .then(function(reg) {
             console.log('[PWA] Service Worker 註冊成功，範圍:', reg.scope);
             reg.update();

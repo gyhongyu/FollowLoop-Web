@@ -12,6 +12,24 @@ class HitlReviewer {
     this.currentEditingBusinessCard = null;
     this.activeSubTab = "business"; // "business" | "cards"
     this.onCardsUpdatedCallbacks = [];
+
+    // 🛡️ 防復活樂觀鎖：sessionStorage 記錄本 Session 已操作的 ID，阻斷 60s 刷新覆蓋
+    this._actionedIds = new Set();
+    try {
+      const saved = sessionStorage.getItem('fl_hitl_actioned_ids');
+      if (saved) JSON.parse(saved).forEach(id => this._actionedIds.add(id));
+    } catch (e) {}
+  }
+
+  /**
+   * 將已操作 ID 寫入 sessionStorage（防 60s 刷新復活，F5 後自動清除）
+   */
+  _markActioned(logId) {
+    if (!logId) return;
+    this._actionedIds.add(logId);
+    try {
+      sessionStorage.setItem('fl_hitl_actioned_ids', JSON.stringify(Array.from(this._actionedIds)));
+    } catch (e) {}
   }
 
   /**
@@ -140,7 +158,15 @@ class HitlReviewer {
           }
         }
 
-        this.pendingCards = pendingList;
+        // 🛡️ 樂觀鎖過濾：排除本 Session 已操作但後端尚未同步的卡片，徹底終結 60s 刷新復活
+        this.pendingCards = pendingList.filter(card => {
+          const cid = card.log_id || card.entry_id;
+          if (this._actionedIds && this._actionedIds.has(cid)) {
+            console.log(`[HitlReviewer] 🛡️ 樂觀鎖過濾: 卡片 ${cid} 本 Session 已操作，跳過顯示`);
+            return false;
+          }
+          return true;
+        });
         this._classifyCards();
       } else {
         this.pendingCards = [];
@@ -224,6 +250,7 @@ class HitlReviewer {
     }
 
     // 從前端待審列表中移除該卡片
+    this._markActioned(targetId);
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
@@ -247,6 +274,7 @@ class HitlReviewer {
       throw new Error(res.message || "GAS 修訂批准操作未成功");
     }
 
+    this._markActioned(targetId);
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
@@ -307,7 +335,22 @@ class HitlReviewer {
     // 3. 雲端 Google Sheet + 本地 SQLite 物理抹除 Memory_Pool_Raw 該行
     await this._sendReviewAction(targetId, "REJECT");
 
-    // 4. 本地即時物理移除卡片
+    // 4. 🛡️ 持久化 Drive 檔案 ID 至 localStorage，防止打工仔重複提煉已作廢圖檔
+    for (const fid of filesToTrash) {
+      if (window.backgroundPipeline && typeof window.backgroundPipeline.markFileProcessed === 'function') {
+        window.backgroundPipeline.markFileProcessed(fid);
+      } else {
+        try {
+          const saved = localStorage.getItem('fl_processed_card_files');
+          const arr = saved ? JSON.parse(saved) : [];
+          if (!arr.includes(fid)) arr.push(fid);
+          localStorage.setItem('fl_processed_card_files', JSON.stringify(arr));
+        } catch (e) {}
+      }
+    }
+
+    // 5. sessionStorage 樂觀鎖 + 本地即時物理移除卡片
+    this._markActioned(targetId);
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
@@ -448,29 +491,40 @@ class HitlReviewer {
       throw new Error(`Google 通訊錄網關拒絕: ${contactJson.message || '未知錯誤'}`);
     }
 
-    // 4. 0 搬移不可變架構：背景更新個人檔案總帳狀態為 APPROVED (不搬移實體檔案，0 延遲，杜絕跨帳號 403 報錯)
-    (async () => {
-      try {
-        if (card.attachments && card.attachments.length > 0 && typeof sendDriveGasRequest === "function") {
-          for (const att of card.attachments) {
-            const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
-            if (fid) {
-              console.log(`[HitlReviewer] 0 搬移架構：更新個人檔案總帳 (${fid}) 狀態為 PROCESSED (已提煉素材)...`);
-              sendDriveGasRequest("update_file_status", { file_id: fid, status: "PROCESSED" }).catch(() => {});
+    // 4. 0 搬移不可變架構：嚴格 await 更新個人檔案總帳狀態為 PROCESSED + 持久化防重複提煉
+    try {
+      if (card.attachments && card.attachments.length > 0 && typeof sendDriveGasRequest === "function") {
+        for (const att of card.attachments) {
+          const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
+          if (fid) {
+            console.log(`[HitlReviewer] 嚴格 await 更新個人檔案總帳 (${fid}) 狀態為 PROCESSED...`);
+            await sendDriveGasRequest("update_file_status", { file_id: fid, status: "PROCESSED" });
+            // 🛡️ 持久化至 localStorage 防止打工仔重複提煉
+            if (window.backgroundPipeline && typeof window.backgroundPipeline.markFileProcessed === 'function') {
+              window.backgroundPipeline.markFileProcessed(fid);
+            } else {
+              try {
+                const saved = localStorage.getItem('fl_processed_card_files');
+                const arr = saved ? JSON.parse(saved) : [];
+                if (!arr.includes(fid)) arr.push(fid);
+                localStorage.setItem('fl_processed_card_files', JSON.stringify(arr));
+              } catch (e) {}
             }
           }
         }
-      } catch (attErr) {
-        console.warn("[HitlReviewer] 更新個人檔案總帳狀態略過:", attErr);
       }
-    })();
+    } catch (attErr) {
+      console.warn("[HitlReviewer] 更新個人檔案總帳狀態警告 (非致命):", attErr);
+    }
 
-    // 5. 呼叫 GAS review_action 將待審佇列標記為 APPROVED (直連雲端並雙向同步本地)
-    await this._sendReviewAction(targetId, "APPROVE").catch(e => {
-      console.warn("[HitlReviewer] 名片佇列狀態更新警示:", e);
-    });
+    // 5. 嚴格 await 呼叫 GAS review_action 將待審佇列標記為 APPROVED (不再靜默吞錯)
+    const reviewRes = await this._sendReviewAction(targetId, "APPROVE");
+    if (reviewRes && reviewRes.status !== "success") {
+      console.warn("[HitlReviewer] 名片佇列狀態更新未完全成功:", reviewRes);
+    }
 
-    // 6. 前端即時移除該名片卡片
+    // 6. 🛡️ 記錄至 sessionStorage 樂觀鎖 + 前端即時移除
+    this._markActioned(targetId);
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
