@@ -410,7 +410,11 @@ class BusinessCardHandler {
       const now = new Date();
       const pad = (n) => String(n).padStart(2, "0");
       const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const logId = `CARD_${ymd}_${Math.random().toString(36).substring(2, 6)}`;
+      // 🛡️ 決定性主鍵防重 (Deterministic PK)：以 Google Drive 首張圖檔 ID 作為決定性 PK，保證多端併發寫入時 100% In-Place 覆蓋，絕不產生孿生記錄
+      const primaryFileId = (fileList && fileList[0] && fileList[0].id)
+        ? String(fileList[0].id).replace(/[^a-zA-Z0-9_-]/g, "")
+        : `${ymd}_${Math.random().toString(36).substring(2, 6)}`;
+      const logId = `CARD_${primaryFileId}`;
       const cleanTimestamp = now.toISOString();
 
       const detailsPayload = JSON.stringify({

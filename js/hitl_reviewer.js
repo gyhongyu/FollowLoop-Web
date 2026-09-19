@@ -24,9 +24,9 @@ class HitlReviewer {
   /**
    * 將已操作 ID 寫入 sessionStorage（防 60s 刷新復活，F5 後自動清除）
    */
-  _markActioned(logId) {
-    if (!logId) return;
-    this._actionedIds.add(logId);
+  _markActioned(logId, fileId = null) {
+    if (logId) this._actionedIds.add(logId);
+    if (fileId) this._actionedIds.add(fileId);
     try {
       sessionStorage.setItem('fl_hitl_actioned_ids', JSON.stringify(Array.from(this._actionedIds)));
     } catch (e) {}
@@ -84,10 +84,13 @@ class HitlReviewer {
         }
 
         const queueTag = CONFIG.CARDS_QUEUE_TAG || "CARDS_QUEUE";
+        // 🛡️ 已審核圖檔真值盾牌 (Approved Shield Set)
+        const approvedDriveFileIds = new Set();
 
         // 跳過標頭列 (r=1 開始)
         for (let r = 1; r < rows.length; r++) {
           const row = rows[r];
+          const status = (row[10] || "").toString().trim().toUpperCase();
 
           // ⚡ 核心修復：無論該行是 APPROVED、PROCESSED 還是 PENDING，只要在資料庫中存在附件圖檔，立即收錄其 File ID 杜絕重複辨識
           const attRaw = row[8];
@@ -96,15 +99,23 @@ class HitlReviewer {
               const attList = typeof attRaw === "string" && attRaw.startsWith("[") ? JSON.parse(attRaw) : (Array.isArray(attRaw) ? attRaw : []);
               if (Array.isArray(attList)) {
                 for (const att of attList) {
-                  if (att.id) window.FL_PROCESSED_DRIVE_IDS.add(att.id);
+                  if (att.id) {
+                    window.FL_PROCESSED_DRIVE_IDS.add(att.id);
+                    if (status === "APPROVED" || status === "PROCESSED") {
+                      approvedDriveFileIds.add(att.id);
+                    }
+                  }
                   const m = (att.url || "").match(/[-\w]{25,}/);
-                  if (m) window.FL_PROCESSED_DRIVE_IDS.add(m[0]);
+                  if (m) {
+                    window.FL_PROCESSED_DRIVE_IDS.add(m[0]);
+                    if (status === "APPROVED" || status === "PROCESSED") {
+                      approvedDriveFileIds.add(m[0]);
+                    }
+                  }
                 }
               }
             } catch (e) {}
           }
-
-          const status = (row[10] || "").toString().trim().toUpperCase();
 
           if (status === "PENDING_REVIEW" || status === "PENDING") {
             const rawId = row[0] || `RAW-ROW-${r + 1}`;
@@ -179,13 +190,43 @@ class HitlReviewer {
           }
         }
 
-        // 🛡️ 樂觀鎖過濾：排除本 Session 已操作但後端尚未同步的卡片，徹底終結 60s 刷新復活
+        // 🛡️ 雙重防禦過濾：
+        // 1. 樂觀鎖：排除本 Session 已操作但後端尚未同步的卡片 (按 logId 與 fileId 雙查)
+        // 2. 審核盾牌 (Approved Shield)：若待審卡片的 Drive File ID 已在全表中被標記為 APPROVED，代表已有設備批准入庫，立即物理過濾並非同步抹除幽靈卡
+        // 3. 隊列去重：若多張待審卡引用相同 Drive File ID，僅保留第一張
+        const seenPendingFileIds = new Set();
         this.pendingCards = pendingList.filter(card => {
           const cid = card.log_id || card.entry_id;
           if (this._actionedIds && this._actionedIds.has(cid)) {
             console.log(`[HitlReviewer] 🛡️ 樂觀鎖過濾: 卡片 ${cid} 本 Session 已操作，跳過顯示`);
             return false;
           }
+
+          // 審核盾牌與檔案排重
+          if (card.attachments && Array.isArray(card.attachments) && card.attachments.length > 0) {
+            for (const att of card.attachments) {
+              const fid = att.id || ((att.url || "").match(/[-\w]{25,}/) || [])[0];
+              if (fid) {
+                if (this._actionedIds && this._actionedIds.has(fid)) {
+                  console.log(`[HitlReviewer] 🛡️ 樂觀鎖過濾 (File ID): 卡片檔案 ${fid} 本 Session 已操作，跳過顯示`);
+                  return false;
+                }
+                if (approvedDriveFileIds.has(fid)) {
+                  console.warn(`[HitlReviewer] 🛡️ 審核盾牌攔截: 卡片 ${cid} 之檔案 ${fid} 在資料庫中已為 APPROVED，判定為併發孿生殘留，自動過濾並清理！`);
+                  if (typeof sendGasRequest === "function") {
+                    sendGasRequest("delete_record", { sheet: "Memory_Pool_Raw", id: cid }).catch(() => {});
+                  }
+                  return false;
+                }
+                if (seenPendingFileIds.has(fid)) {
+                  console.warn(`[HitlReviewer] 🛡️ 隊列去重: 檔案 ${fid} 已有待審卡片，剔除重複待審卡 ${cid}`);
+                  return false;
+                }
+                seenPendingFileIds.add(fid);
+              }
+            }
+          }
+
           return true;
         });
         this._classifyCards();
@@ -373,8 +414,9 @@ class HitlReviewer {
       }
     }
 
-    // 5. sessionStorage 樂觀鎖 + 本地即時物理移除卡片
-    this._markActioned(targetId);
+    // 5. sessionStorage 樂觀鎖 + 本地即時物理移除卡片 (按 logId 與 fileId 雙鎖定)
+    const rejectFid = filesToTrash.length > 0 ? filesToTrash[0] : null;
+    this._markActioned(targetId, rejectFid);
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
@@ -550,8 +592,9 @@ class HitlReviewer {
       console.warn("[HitlReviewer] 名片佇列狀態更新未完全成功:", reviewRes);
     }
 
-    // 6. 🛡️ 記錄至 sessionStorage 樂觀鎖 + 前端即時移除
-    this._markActioned(targetId);
+    // 6. 🛡️ 記錄至 sessionStorage 樂觀鎖 + 前端即時移除 (按 logId 與 fileId 雙鎖定)
+    const firstFid = (card.attachments && card.attachments[0]) ? (card.attachments[0].id || ((card.attachments[0].url || "").match(/[-\w]{25,}/) || [])[0]) : null;
+    this._markActioned(targetId, firstFid);
     this.pendingCards = this.pendingCards.filter((c) => (c.log_id !== targetId && c.entry_id !== targetId));
     this._classifyCards();
     this.notify();
