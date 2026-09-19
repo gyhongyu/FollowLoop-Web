@@ -283,6 +283,113 @@ function startAutoRefresh() {
   }, CONFIG.AUTO_REFRESH_INTERVAL);
 }
 
+/* --------------------------------------------------------------------------
+   3.1 全屏科技感阻斷進度遮罩 (Global Progress Overlay)
+   -------------------------------------------------------------------------- */
+function ensureProgressOverlayElement() {
+  let overlay = document.getElementById("global-progress-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "global-progress-overlay";
+    overlay.className = "global-progress-overlay";
+    overlay.innerHTML = `
+      <div class="global-progress-card">
+        <div class="progress-spinner-ring">
+          <div class="spin-outer" id="progress-spinner-outer"></div>
+          <div class="status-icon" id="progress-status-icon">⏳</div>
+        </div>
+        <h3 class="progress-overlay-title" id="progress-overlay-title">正在處理中...</h3>
+        <div class="progress-overlay-desc" id="progress-overlay-desc">請稍候，資料正在安全傳輸與同步...</div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width: 25%;"></div>
+        </div>
+        <div id="progress-overlay-action" style="display: none; margin-top: 18px; width: 100%;">
+          <button type="button" onclick="window.closeProgressOverlay()" class="btn-primary" style="width: 100%; padding: 10px; font-weight: 600;">確定關閉</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+  return overlay;
+}
+
+window.showProgressOverlay = function(title = "正在寫入 Google 通訊錄...", desc = "正在連線網關中...") {
+  const overlay = ensureProgressOverlayElement();
+  const titleEl = document.getElementById("progress-overlay-title");
+  const descEl = document.getElementById("progress-overlay-desc");
+  const barEl = document.getElementById("progress-bar-fill");
+  const iconEl = document.getElementById("progress-status-icon");
+  const spinOuter = document.getElementById("progress-spinner-outer");
+  const actionDiv = document.getElementById("progress-overlay-action");
+
+  if (titleEl) titleEl.textContent = title;
+  if (descEl) descEl.textContent = desc;
+  if (barEl) {
+    barEl.style.width = "20%";
+    barEl.style.background = "linear-gradient(90deg, #6366f1, #38bdf8, #10b981)";
+  }
+  if (iconEl) iconEl.textContent = "⏳";
+  if (spinOuter) spinOuter.style.display = "block";
+  if (actionDiv) actionDiv.style.display = "none";
+
+  overlay.classList.add("active");
+};
+
+window.updateProgressOverlay = function(desc, percent = null) {
+  const descEl = document.getElementById("progress-overlay-desc");
+  const barEl = document.getElementById("progress-bar-fill");
+  if (descEl && desc) descEl.textContent = desc;
+  if (barEl && percent !== null) {
+    barEl.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+  }
+};
+
+window.finishProgressOverlay = function(success = true, message = "", autoCloseDelay = 1200) {
+  const overlay = document.getElementById("global-progress-overlay");
+  if (!overlay) return;
+
+  const titleEl = document.getElementById("progress-overlay-title");
+  const descEl = document.getElementById("progress-overlay-desc");
+  const barEl = document.getElementById("progress-bar-fill");
+  const iconEl = document.getElementById("progress-status-icon");
+  const spinOuter = document.getElementById("progress-spinner-outer");
+  const actionDiv = document.getElementById("progress-overlay-action");
+
+  if (spinOuter) spinOuter.style.display = "none";
+
+  if (success) {
+    if (iconEl) iconEl.textContent = "✅";
+    if (titleEl) titleEl.textContent = "🎉 操作成功完成！";
+    if (descEl) descEl.textContent = message || "資料已安全同步至目標系統。";
+    if (barEl) {
+      barEl.style.width = "100%";
+      barEl.style.background = "#10b981";
+    }
+
+    if (autoCloseDelay > 0) {
+      setTimeout(() => {
+        window.closeProgressOverlay();
+      }, autoCloseDelay);
+    }
+  } else {
+    if (iconEl) iconEl.textContent = "❌";
+    if (titleEl) titleEl.textContent = "操作未能完成";
+    if (descEl) descEl.textContent = message || "發生未知錯誤，請檢查後重試。";
+    if (barEl) {
+      barEl.style.width = "100%";
+      barEl.style.background = "#ef4444";
+    }
+    if (actionDiv) actionDiv.style.display = "block";
+  }
+};
+
+window.closeProgressOverlay = function() {
+  const overlay = document.getElementById("global-progress-overlay");
+  if (overlay) {
+    overlay.classList.remove("active");
+  }
+};
+
 // 🌐 全域掛載渲染函數供外部調用
 window.showToast = showToast;
 window.startAutoRefresh = startAutoRefresh;

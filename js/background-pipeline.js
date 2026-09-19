@@ -409,6 +409,38 @@ class BusinessCardHandler {
         }
       }
 
+      // 🧠 0ms 本地全域人脈富化探針：非阻塞式嘗試關聯 WhatsApp 與 Google Contacts 快取庫
+      let waMatchInfo = null;
+      try {
+        const enrichRes = await fetch("http://127.0.0.1:8765/api/exec", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "match_contact",
+            data: {
+              name: cardInfo.name,
+              phone: cardInfo.phone,
+              phones: cardInfo.phones || []
+            }
+          })
+        }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+        if (enrichRes && enrichRes.status === "success" && enrichRes.whatsapp) {
+          waMatchInfo = enrichRes.whatsapp;
+          const waPhone = waMatchInfo.phone || waMatchInfo.jid ? String(waMatchInfo.phone || waMatchInfo.jid).replace(/@.*/, "") : "";
+          if (waPhone) {
+            // 補齊國碼
+            let cleanWaPhone = waPhone.startsWith("+") ? waPhone : ("+" + waPhone);
+            const exists = (cardInfo.phones || []).some(p => (p.value || "").replace(/\D/g, "") === cleanWaPhone.replace(/\D/g, ""));
+            if (!exists) {
+              if (!cardInfo.phones) cardInfo.phones = [];
+              cardInfo.phones.unshift({ value: cleanWaPhone, type: "mobile" });
+              cardInfo.phone = cleanWaPhone;
+            }
+          }
+        }
+      } catch (e) {}
+
       // ⚡ 即時注入前端 HITL 待審核佇列 (0ms 反應)
       if (window.hitlReviewer) {
         window.hitlReviewer.addCardDirectly({
@@ -424,8 +456,10 @@ class BusinessCardHandler {
           phone: cardInfo.phone || "",
           phones: cardInfo.phones || [],
           email: cardInfo.email || "",
+          website: cardInfo.website || "",
           address: cardInfo.address || "",
           notes: cardInfo.notes || "",
+          wa_info: waMatchInfo,
           attachment_links: JSON.stringify(attachmentLinks),
           attachments: attachmentLinks,
           confidence_score: "0.95",
@@ -516,44 +550,46 @@ class BusinessCardHandler {
 
     items.forEach((item) => {
       let val = "";
-      let type = "mobile";
+      let type = "work";
 
       if (typeof item === "object" && item !== null) {
         val = (item.value || item.number || "").trim();
-        type = item.type || "mobile";
+        type = item.type || "work";
       } else {
         val = String(item).trim();
       }
 
       if (!val) return;
 
+      // 判斷傳真或市話
+      const isFax = /fax|傳真|F[\s:：]/i.test(val) || type.includes("fax");
+      const isWork = /office|work|tel|市話|公司|分機|T[\s:：]/i.test(val) || val.includes("(91)") || val.includes("120-") || val.includes("020-") || val.includes("080-");
+
       // 提取純數字與 + 號
-      const cleanDigits = val.replace(/[^\d+]/g, "");
-      if (cleanDigits.replace(/\D/g, "").length < 6) return; // 長度不足忽略
-
-      // 智慧補齊國碼：
-      // 1. 若為 10 碼且以 6, 7, 8, 9 開頭 (印度手機) -> 補 +91
-      // 2. 若為 0 開頭且為 10 碼 (例如 020-27293605 普奈市話) -> 轉為 +91 20 27293605
-      let formatted = val;
+      let cleanDigits = val.replace(/\(91\)/g, "+91 ").replace(/[^\d+]/g, " ").replace(/\s+/g, " ").trim();
       const pureDigits = cleanDigits.replace(/\D/g, "");
+      if (pureDigits.length < 6) return; // 長度不足忽略
 
-      if (!val.startsWith("+")) {
-        if (pureDigits.length === 10 && /^[6-9]/.test(pureDigits)) {
+      let formatted = val.replace(/^[TF][\s:：]*/i, "").replace(/\(91\)/g, "+91").trim();
+
+      if (!formatted.startsWith("+")) {
+        if (pureDigits.startsWith("91") && pureDigits.length >= 10) {
+          formatted = `+${pureDigits.substring(0, 2)} ${pureDigits.substring(2, 5)} ${pureDigits.substring(5)}`;
+        } else if (pureDigits.length === 10 && /^[6-9]/.test(pureDigits)) {
           formatted = `+91 ${pureDigits.substring(0, 5)} ${pureDigits.substring(5)}`;
           type = "mobile";
-        } else if (pureDigits.length === 10 && pureDigits.startsWith("0")) {
-          // 移除開頭 0 補 +91
+        } else if (pureDigits.length >= 8 && pureDigits.startsWith("0")) {
           formatted = `+91 ${pureDigits.substring(1)}`;
           type = "work";
         } else if (pureDigits.length === 10 && pureDigits.startsWith("09")) {
-          // 台灣手機 09xx -> +886 9xx
           formatted = `+886 ${pureDigits.substring(1)}`;
           type = "mobile";
         }
       }
 
-      // 判斷 type
-      if (/office|work|tel|phone|市話|公司|分機/i.test(val) || formatted.includes("020-") || formatted.includes("080-")) {
+      if (isFax) {
+        type = "work_fax";
+      } else if (isWork || formatted.includes("+91 120") || formatted.includes("+91 20") || formatted.includes("+91 80")) {
         type = "work";
       }
 
@@ -564,27 +600,31 @@ class BusinessCardHandler {
   }
 
   /**
-   * 調用 Vision 大模型解析名片 (嚴格對齊 VCF 標準結構)
+   * 調用 Vision 大模型解析名片 (嚴格對齊 VCF / Google People API 中英雙語高保真標準結構)
    */
   async extractCardInfo(images) {
     const worker = this.getWorker();
-    const prompt = `請詳細辨識圖片中的名片內容，並嚴格提取為符合 VCF / 通訊錄標準的純 JSON 物件：
+    const prompt = `請詳細辨識圖片中的名片內容，並嚴格提取為符合 VCF / Google 通訊錄標準的純 JSON 物件：
 {
-  "name": "聯絡人姓名 (若有多人請取主要持有人，去除先生/小姐等尊稱)",
-  "company": "公司或機構全銜",
-  "title": "職稱 / 頭銜 (如 Director / VP / SCM Manager)",
+  "name": "聯絡人姓名 (若同時有中文與英文，請合併為 '中文名 (English Name)' 格式，例如 '曾華濬 (Andy Tseng)'；若僅有英文則填英文，僅有中文則填中文)",
+  "chinese_name": "中文姓名 (若無則填空字串)",
+  "english_name": "英文姓名 (若無則填空字串)",
+  "nickname": "英文名/暱稱 (如 Andy，若無則填空字串)",
+  "company": "公司或機構全銜 (若同時有中文與英文機構，請用斜線合併，例如 '中鼎集團 中鼎印度公司 / CINDA Engineering & Construction Pvt. Ltd.')",
+  "title": "職稱 / 頭銜 (若有雙語請合併，例如 '總經理 / Managing Director')",
   "phones": [
-    { "type": "mobile", "value": "+91 98902 66646" },
-    { "type": "work", "value": "+91 20 2729 3605" }
+    { "type": "work", "value": "+91 120 4722300" },
+    { "type": "work_fax", "value": "+91 120 4722399" }
   ],
-  "phone": "主要聯繫電話 (E.164 帶國碼，如 +91 98902 66646，嚴禁用斜線串接多個號碼)",
+  "phone": "主要聯繫電話 (帶國碼，如 +91 120 4722300，嚴禁用斜線串接多個號碼)",
   "email": "電子郵件信箱",
-  "address": "公司完整實體地址",
+  "website": "公司官網網址 (如 www.ctci.com)",
+  "address": "公司完整實體地址 (如 Corenthum, 6th Fl., Tower-B, Plot No. A-41, Sector-62, Noida-201301, U.P. INDIA)",
   "notes": "業務服務範疇或重要業務標語 (⚠️ 嚴禁在此重述電話、手機、姓名或地址等重複垃圾資訊！)"
 }
 注意：
-1. 若為正反兩面，請融合提取。
-2. 多支電話請務必拆入 "phones" 陣列中，絕對禁止在單一字串中用斜線 "/" 拼湊！
+1. 若為正反兩面（中文面 + 英文面），請徹底融合萃取兩面的所有文字資訊，不可遺漏任何一面的公司名、地址、電話、傳真或官網！
+2. 多支電話/傳真請務必拆入 'phones' 陣列中 (type 區分 work/mobile/work_fax)，絕對禁止在單一字串中用斜線 '/' 拼湊！
 3. 必須直接輸出純 JSON，嚴禁包含 markdown 標籤或任何引導文字。`;
 
     const userContent = [{ type: "text", text: prompt }];
@@ -616,7 +656,7 @@ class BusinessCardHandler {
     // 剔除 notes 中殘留的電話複述垃圾
     if (parsed.notes) {
       parsed.notes = parsed.notes
-        .replace(/(辦公室電話|行動電話|電話|手機|TEL|Phone|Mobile|Office)[\s:：]*[+\d\s\-\/]+/gi, "")
+        .replace(/(辦公室電話|行動電話|電話|手機|TEL|Phone|Mobile|Office|Fax|傳真)[\s:：]*[+\d\s\-\/]+/gi, "")
         .replace(/^[、，,.\s]+|[、，,.\s]+$/g, "")
         .trim();
     }

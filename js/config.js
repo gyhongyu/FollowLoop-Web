@@ -28,7 +28,7 @@ const CONFIG = {
   GAS_DRIVE_URL: "https://script.google.com/macros/s/AKfycbxkvUs9uwru7L8yNkqWBmLh8wPwhpRTsTYyrTzYDnG518DBC-yvcAbamSO7-8ajiOfdgg/exec",
   
   // 3. Google Contacts 萬能網關 (google_contacts_gateway)
-  CONTACTS_GATEWAY_URL: "https://script.google.com/macros/s/AKfycbyKnxJ2waOYny88XQH_65GagqVpcbBGVh7vCMwIT4JwowO2u__k6CUk1NDbTDrs-oqQ/exec",
+  CONTACTS_GATEWAY_URL: "https://script.google.com/macros/s/AKfycbyTk7-wdoka35BfCy8tMFkK6vMLZWKrBXBsO-gmNzpT_a-tybzlnYWx0YrLn2D0XSbV/exec",
   FOXLINK_GROUP_RESOURCE_NAME: "contactGroups/32c2175b88f3d791", // 🔒 Foxlink 公務專屬人脈標籤 (SSOT)
   CARDS_QUEUE_TAG: "CARDS_QUEUE", // 🪪 名片獨立 HITL 暫存佇列標籤
   

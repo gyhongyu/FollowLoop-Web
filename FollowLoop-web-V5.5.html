@@ -37,10 +37,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="css/main.css?v=5.4.0">
-  <link rel="stylesheet" href="css/components.css?v=5.4.0">
-  <link rel="stylesheet" href="css/responsive.css?v=5.4.0">
-  <link rel="stylesheet" href="css/themes.css?v=5.4.0">
+  <link rel="stylesheet" href="css/main.css?v=5.5.2">
+  <link rel="stylesheet" href="css/components.css?v=5.5.2">
+  <link rel="stylesheet" href="css/responsive.css?v=5.5.2">
+  <link rel="stylesheet" href="css/themes.css?v=5.5.2">
 
   <!-- 🔒 強制 Toast 浮動於右下角，徹底杜絕遮蔽中央彈窗標題與右上角關閉按鈕 -->
   <style id="fl-toast-position-override">
@@ -714,17 +714,33 @@
 
   <!-- Modal 3.5: 🪪 名片獨立審核與修改彈窗 -->
   <div id="edit-card-modal-backdrop" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 2500; align-items: center; justify-content: center;">
-    <div id="edit-card-modal" class="modal-card" style="width: 540px; max-width: 92vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
+    <div id="edit-card-modal" class="modal-card" style="width: 640px; max-width: 94vw; padding: 24px; margin: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.5); border: 1px solid rgba(99, 102, 241, 0.4); max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-card-light); padding-bottom: 10px;">
-        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">🪪 審核與修訂名片資料</h3>
+        <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+          🪪 審核與修訂名片資料
+        </h3>
         <button onclick="closeEditCardModal()" class="admin-panel-close" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;" title="關閉">✕</button>
       </div>
       <input type="hidden" id="modal-card-id">
+      <input type="hidden" id="modal-card-linked-gc-id">
+
+      <!-- 🔗 已關聯 Google 聯絡人指示橫幅 (預設隱藏，關聯後顯眼提示) -->
+      <div id="modal-card-linked-gc-banner" style="display: none; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: #93c5fd;">
+          <span style="font-size: 1.1rem;">🔗</span>
+          <div>
+            <div style="line-height: 1.3;"><b>已關聯現有 Google 聯絡人：</b><span id="modal-card-linked-gc-name" style="color: #fff; font-weight: 700;"></span></div>
+            <div style="font-size: 0.73rem; color: #60a5fa; margin-top: 1px;">⚡ 批准入庫將直接更新合併至此聯絡人，絕不重複建立第二筆！</div>
+          </div>
+        </div>
+        <button type="button" onclick="window.unlinkCardContactCandidate()" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 4px; padding: 3px 10px; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap;">✕ 取消關聯</button>
+      </div>
+
       <div style="display: flex; flex-direction: column; gap: 14px;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div>
             <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">👤 姓名 <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="modal-card-name" class="form-control" placeholder="聯絡人姓名">
+            <input type="text" id="modal-card-name" class="form-control" placeholder="聯絡人姓名 (如 曾華濬 (Andy Tseng))">
           </div>
           <div>
             <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">🏢 公司機構</label>
@@ -735,11 +751,42 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div>
             <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">👔 職稱 / 頭銜</label>
-            <input type="text" id="modal-card-title" class="form-control" placeholder="職稱如 VP / Director / 經理">
+            <input type="text" id="modal-card-title" class="form-control" placeholder="職稱如 總經理 / Managing Director">
           </div>
           <div>
-            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📞 電話 / 手機</label>
-            <input type="text" id="modal-card-phone" class="form-control" placeholder="+91 99020 06090">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0;">📱 個人手機 (WhatsApp 綁定)</label>
+              <button type="button" onclick="window.toggleCardContactPicker()" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-size: 0.74rem; cursor: pointer; font-weight: 700; padding: 2px 8px; border-radius: 4px; display: flex; align-items: center; gap: 4px;" title="從本地 WhatsApp / Google 通訊錄搜尋並關聯已有號碼">
+                🔍 關聯現有人脈
+              </button>
+            </div>
+            <input type="text" id="modal-card-mobile" class="form-control" placeholder="+91 98902 66646 或 +886 928 803 978">
+          </div>
+        </div>
+
+        <!-- 🔗 智慧人脈候選抽屜 (全寬橫跨，寬敞大氣) -->
+        <div id="modal-card-contact-picker-drawer" style="display: none; background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 0.82rem; font-weight: 700; color: #10b981;">🔍 本地人脈庫 (Google Contacts ✕ WhatsApp 秒查)</span>
+            <button type="button" onclick="window.toggleCardContactPicker()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.9rem;">✕ 收起</button>
+          </div>
+          <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <input type="text" id="modal-card-contact-search-input" class="form-control" style="font-size: 0.82rem; padding: 6px 10px;" placeholder="輸入姓名/電話/公司 (如 Andy, Cinda) 快速檢索...">
+            <button type="button" onclick="window.searchCardContactsManual()" class="btn-primary" style="padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">搜尋</button>
+          </div>
+          <div id="modal-card-contact-candidates-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto;">
+            <div style="color: var(--text-subtle); text-align: center; padding: 8px;">正在搜尋關聯人脈...</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📞 公司座機 / 總機</label>
+            <input type="text" id="modal-card-work-phone" class="form-control" placeholder="+91 120 4722300">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📠 公司傳真 (Fax)</label>
+            <input type="text" id="modal-card-fax" class="form-control" placeholder="+91 120 4722399">
           </div>
         </div>
 
@@ -749,14 +796,19 @@
             <input type="email" id="modal-card-email" class="form-control" placeholder="name@company.com">
           </div>
           <div>
-            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📍 地址 / 據點</label>
-            <input type="text" id="modal-card-address" class="form-control" placeholder="公司地址">
+            <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">🌐 公司官網 / 網址</label>
+            <input type="text" id="modal-card-website" class="form-control" placeholder="www.ctci.com">
           </div>
         </div>
 
         <div>
-          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📝 備註事項</label>
-          <textarea id="modal-card-notes" class="form-control" style="height: 70px; resize: vertical;" placeholder="業務範疇、會談重點或備註"></textarea>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📍 公司實體地址</label>
+          <input type="text" id="modal-card-address" class="form-control" placeholder="公司完整地址">
+        </div>
+
+        <div>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">📝 業務範疇 / 業務標語備註</label>
+          <textarea id="modal-card-notes" class="form-control" style="height: 65px; resize: vertical;" placeholder="例如：Discover Reliable / 工程承包與系統整合服務"></textarea>
         </div>
 
         <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; border-top: 1px solid var(--border-card-light); padding-top: 14px;">
@@ -764,7 +816,7 @@
           <button class="btn-edit" style="padding: 8px 16px; font-size: 0.88rem; font-weight: 600;" onclick="submitEditBusinessCard(false)">
             <span>💾 僅更新待審資料</span>
           </button>
-          <button class="btn-primary" style="padding: 8px 20px; font-size: 0.88rem; font-weight: 600;" onclick="submitEditBusinessCard(true)">
+          <button id="modal-card-approve-btn" class="btn-primary" style="padding: 8px 20px; font-size: 0.88rem; font-weight: 600;" onclick="submitEditBusinessCard(true)">
             <span>✓ 儲存並批准入庫</span>
           </button>
         </div>
@@ -931,33 +983,33 @@
     }
   </script>
 
-  <!-- Application Scripts (V5.4 專案附件卡片極簡與防破格治理版) -->
-  <script src="js/config.js?v=5.4.0"></script>
-  <script src="js/openrouter-worker.js?v=5.4.0"></script>
-  <script src="js/openrouter_extractor.js?v=5.4.0"></script>
-  <script src="js/admin_panel.js?v=5.4.0"></script>
-  <script src="js/drive_uploader.js?v=5.4.0"></script>
-  <script src="js/hitl_reviewer.js?v=5.4.0"></script>
-  <script src="js/live_view.js?v=5.4.0"></script>
-  <script src="js/project_manager.js?v=5.4.0"></script>
-  <script src="js/auth.js?v=5.4.0"></script>
-  <!-- Application Modules (V5.4 高內聚模組化架構) -->
-  <script src="js/modules/ai_task_logger.js?v=5.4.0"></script>
-  <script src="js/modules/draft_manager.js?v=5.4.0"></script>
-  <script src="js/modules/ingestion_gate.js?v=5.4.0"></script>
-  <script src="js/modules/hitl_card_modal.js?v=5.4.0"></script>
-  <script src="js/modules/hitl_log_modal.js?v=5.4.0"></script>
-  <script src="js/modules/crm_detail_modal.js?v=5.4.0"></script>
-  <script src="js/modules/share_target.js?v=5.4.0"></script>
+  <!-- Application Scripts (V5.5.2 全屏進度遮罩與 Google 聯絡人智能合併更新版) -->
+  <script src="js/config.js?v=5.5.2"></script>
+  <script src="js/openrouter-worker.js?v=5.5.2"></script>
+  <script src="js/openrouter_extractor.js?v=5.5.2"></script>
+  <script src="js/admin_panel.js?v=5.5.2"></script>
+  <script src="js/drive_uploader.js?v=5.5.2"></script>
+  <script src="js/hitl_reviewer.js?v=5.5.2"></script>
+  <script src="js/live_view.js?v=5.5.2"></script>
+  <script src="js/project_manager.js?v=5.5.2"></script>
+  <script src="js/auth.js?v=5.5.2"></script>
+  <!-- Application Modules (V5.5.2 名片多電話 + 人脈關聯搜尋精準置頂 + 智能合併) -->
+  <script src="js/modules/ai_task_logger.js?v=5.5.2"></script>
+  <script src="js/modules/draft_manager.js?v=5.5.2"></script>
+  <script src="js/modules/ingestion_gate.js?v=5.5.2"></script>
+  <script src="js/modules/hitl_card_modal.js?v=5.5.2"></script>
+  <script src="js/modules/hitl_log_modal.js?v=5.5.2"></script>
+  <script src="js/modules/crm_detail_modal.js?v=5.5.2"></script>
+  <script src="js/modules/share_target.js?v=5.5.2"></script>
   <!-- Application Core Controller -->
-  <script src="js/app.js?v=5.4.0"></script>
-  <script src="js/background-pipeline.js?v=5.4.0"></script>
+  <script src="js/app.js?v=5.5.2"></script>
+  <script src="js/background-pipeline.js?v=5.5.2"></script>
 
   <!-- PWA Service Worker 安全註冊與即時熱更新機制 -->
   <script>
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js?v=5.5.0')
+        navigator.serviceWorker.register('./sw.js?v=5.5.2')
           .then(function(reg) {
             console.log('[PWA] Service Worker 註冊成功，範圍:', reg.scope);
             reg.update();

@@ -179,9 +179,10 @@ function renderHitlCards(cards) {
       return `
       <div class="card-hitl-box" id="card-${cardId}">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div style="display: flex; gap: 8px; align-items: center;">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <span class="badge-tag" style="background: rgba(99, 102, 241, 0.18); color: var(--primary-light); font-weight: 700;">🪪 名片辨識</span>
             <span class="badge-stage" style="background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;">🎯 信心度 95%</span>
+            ${card.wa_info ? `<span class="badge-tag" style="background: rgba(37, 211, 102, 0.18); color: #25d366; font-weight: 700;" title="WhatsApp: ${card.wa_info.name || card.wa_info.notify_name || card.wa_info.phone || ''}">🟢 WhatsApp 已關聯好友 (${card.wa_info.name || card.wa_info.notify_name || card.wa_info.phone || '已加'})</span>` : ''}
           </div>
           <span style="font-size: 0.76rem; color: var(--text-subtle); font-family: monospace;">${new Date(card.timestamp).toLocaleString()}</span>
         </div>
@@ -199,14 +200,28 @@ function renderHitlCards(cards) {
         </div>
 
         <div class="card-detail-table">
-          <div class="card-detail-row">
-            <span class="card-detail-label">📞 電話:</span>
-            <span class="card-detail-value" style="font-weight:700; color:#10b981;">${card.phone || "無電話號碼"}</span>
-          </div>
+          ${(() => {
+            const phonesList = Array.isArray(card.phones) && card.phones.length > 0 ? card.phones : (card.phone ? [{ value: card.phone, type: "work" }] : []);
+            return phonesList.map(p => {
+              const isFax = (p.type || "").includes("fax");
+              const icon = isFax ? "📠" : "📞";
+              const label = isFax ? "傳真:" : "電話:";
+              return `
+              <div class="card-detail-row">
+                <span class="card-detail-label">${icon} ${label}</span>
+                <span class="card-detail-value" style="font-weight:700; color:${isFax ? '#f59e0b' : '#10b981'};">${p.value}</span>
+              </div>`;
+            }).join("");
+          })()}
           ${card.email ? `
           <div class="card-detail-row">
             <span class="card-detail-label">✉️ Email:</span>
             <span class="card-detail-value">${card.email}</span>
+          </div>` : ''}
+          ${(card.website || card.url) ? `
+          <div class="card-detail-row">
+            <span class="card-detail-label">🌐 官網:</span>
+            <span class="card-detail-value"><a href="${(card.website || card.url).startsWith('http') ? (card.website || card.url) : 'https://' + (card.website || card.url)}" target="_blank" style="color:var(--primary-light); text-decoration:underline;">${card.website || card.url}</a></span>
           </div>` : ''}
           ${card.address ? `
           <div class="card-detail-row">
@@ -215,8 +230,8 @@ function renderHitlCards(cards) {
           </div>` : ''}
           ${card.notes ? `
           <div class="card-detail-row">
-            <span class="card-detail-label">📝 備註:</span>
-            <span class="card-detail-value">${card.notes}</span>
+            <span class="card-detail-label">📝 業務備註:</span>
+            <span class="card-detail-value" style="color:var(--text-heading); font-style:italic;">${card.notes}</span>
           </div>` : ''}
         </div>
 

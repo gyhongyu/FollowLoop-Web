@@ -482,6 +482,161 @@
     }
 
     /**
+     * 彈出高質感毛玻璃危險操作確認 Modal (Promise-based)
+     */
+    showDeleteConfirmDialog({ dispName, projectTag, rawCount, attCount, driveCount }) {
+      return new Promise((resolve) => {
+        // 先移除可能殘留的舊對話框
+        const existing = document.getElementById("fl-cascade-delete-modal");
+        if (existing) existing.remove();
+
+        const modalHtml = `
+        <div id="fl-cascade-delete-modal" style="
+          position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+          background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          display: flex; align-items: center; justify-content: center; z-index: 9999;
+          opacity: 0; transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1); padding: 16px; box-sizing: border-box;
+        ">
+          <div id="fl-delete-dialog-card" style="
+            background: rgba(30, 41, 59, 0.96);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(239, 68, 68, 0.22);
+            border-radius: 18px; width: 100%; max-width: 480px; overflow: hidden;
+            transform: scale(0.95) translateY(10px); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans TC', sans-serif;
+          ">
+            <!-- 標頭 Header -->
+            <div style="
+              display: flex; align-items: center; justify-content: space-between;
+              padding: 16px 20px; background: rgba(239, 68, 68, 0.12);
+              border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+            ">
+              <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; color: #fca5a5;">
+                <span style="font-size: 1.25rem;">🚨</span>
+                <span>危險操作確認 (Cascade Delete)</span>
+              </div>
+              <button id="fl-delete-btn-close" style="
+                background: transparent; border: none; color: #94a3b8; font-size: 1.2rem;
+                cursor: pointer; padding: 4px; border-radius: 6px; line-height: 1; transition: color 0.15s;
+              " onmouseover="this.style.color='#ffffff'" onmouseout="this.style.color='#94a3b8'">✕</button>
+            </div>
+
+            <!-- 內容 Body -->
+            <div style="padding: 20px;">
+              <p style="margin: 0 0 10px 0; font-size: 0.9rem; color: #cbd5e1;">確定要刪除以下 CRM 專案主檔嗎？</p>
+              
+              <!-- 專案標題卡片 -->
+              <div style="
+                background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;
+              ">
+                <div style="font-weight: 700; font-size: 1.05rem; color: #ffffff; word-break: break-word; margin-bottom: 6px;">
+                  ${dispName}
+                </div>
+                <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; font-size: 0.8rem; padding: 2px 8px; border-radius: 6px; font-family: ui-monospace, monospace;">
+                  <span>🏷️</span>
+                  <span>${projectTag}</span>
+                </div>
+              </div>
+
+              <!-- 關聯連帶資源 3 欄徽章 -->
+              <p style="margin: 0 0 10px 0; font-size: 0.82rem; color: #94a3b8; font-weight: 600;">
+                📌 系統將一併【三表連動 ✕ Google Drive 級聯物理抹除】：
+              </p>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+                <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 6px; text-align: center;">
+                  <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px;">📝 流水帳</div>
+                  <div style="font-size: 1.25rem; font-weight: 700; color: #60a5fa;">${rawCount} <span style="font-size: 0.72rem; font-weight: normal; color: #94a3b8;">筆</span></div>
+                </div>
+                <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 6px; text-align: center;">
+                  <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px;">📎 專案附件</div>
+                  <div style="font-size: 1.25rem; font-weight: 700; color: #34d399;">${attCount} <span style="font-size: 0.72rem; font-weight: normal; color: #94a3b8;">筆</span></div>
+                </div>
+                <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 6px; text-align: center;">
+                  <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px;">☁️ Drive 實體</div>
+                  <div style="font-size: 1.25rem; font-weight: 700; color: #f59e0b;">${driveCount} <span style="font-size: 0.72rem; font-weight: normal; color: #94a3b8;">個</span></div>
+                </div>
+              </div>
+
+              <!-- 警告條 -->
+              <div style="
+                background: rgba(239, 68, 68, 0.12); border-left: 3px solid #ef4444;
+                padding: 10px 12px; border-radius: 6px; font-size: 0.8rem; color: #fca5a5; line-height: 1.45;
+              ">
+                ⚠️ <strong>此操作無法復原！</strong> 雲端試算表孤兒列與 Google Drive 實體檔案將全量物理清退。
+              </div>
+            </div>
+
+            <!-- 按鈕 Footer -->
+            <div style="
+              padding: 14px 20px; background: rgba(15, 23, 42, 0.45);
+              border-top: 1px solid rgba(255, 255, 255, 0.08);
+              display: flex; justify-content: flex-end; gap: 12px;
+            ">
+              <button id="fl-delete-btn-cancel" style="
+                background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+                color: #e2e8f0; padding: 8px 18px; border-radius: 8px; font-size: 0.88rem;
+                font-weight: 600; cursor: pointer; transition: all 0.15s ease;
+              ">取消 (ESC)</button>
+              <button id="fl-delete-btn-confirm" style="
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                border: 1px solid #f87171; color: #ffffff; padding: 8px 20px;
+                border-radius: 8px; font-size: 0.88rem; font-weight: 700;
+                cursor: pointer; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+                transition: all 0.15s ease; display: flex; align-items: center; gap: 6px;
+              ">
+                <span>🗑️</span>
+                <span>確認連帶抹除</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        `;
+
+        document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+        const modalEl = document.getElementById("fl-cascade-delete-modal");
+        const dialogEl = document.getElementById("fl-delete-dialog-card");
+        const btnCancel = document.getElementById("fl-delete-btn-cancel");
+        const btnConfirm = document.getElementById("fl-delete-btn-confirm");
+        const btnClose = document.getElementById("fl-delete-btn-close");
+
+        const cleanup = (result) => {
+          if (!modalEl) return;
+          modalEl.style.opacity = "0";
+          if (dialogEl) dialogEl.style.transform = "scale(0.95) translateY(10px)";
+          document.removeEventListener("keydown", handleKey);
+          setTimeout(() => {
+            modalEl.remove();
+            resolve(result);
+          }, 200);
+        };
+
+        const handleKey = (e) => {
+          if (e.key === "Escape") cleanup(false);
+          else if (e.key === "Enter") cleanup(true);
+        };
+
+        document.addEventListener("keydown", handleKey);
+
+        modalEl.addEventListener("click", (e) => {
+          if (e.target === modalEl) cleanup(false);
+        });
+
+        if (btnCancel) btnCancel.addEventListener("click", () => cleanup(false));
+        if (btnClose) btnClose.addEventListener("click", () => cleanup(false));
+        if (btnConfirm) btnConfirm.addEventListener("click", () => cleanup(true));
+
+        // 動畫進場
+        requestAnimationFrame(() => {
+          if (modalEl) modalEl.style.opacity = "1";
+          if (dialogEl) dialogEl.style.transform = "scale(1) translateY(0)";
+          if (btnCancel) btnCancel.focus();
+        });
+      });
+    }
+
+    /**
      * 刪除專案 (含級聯連動刪除三表資料、二次防呆提示與 0ms 記憶體即時反饋 + 物理乾淨抹除)
      * @param {string} projectTag 專案主鍵 (如 Item_14_01)
      * @param {string} accountName 客戶名稱
@@ -492,24 +647,50 @@
 
       const dispName = projectName ? `${accountName} - ${projectName}` : (accountName || projectTag);
       
-      // 統計該專案底下連帶的流水帳與附件數量
-      let rawCount = 0;
-      let attCount = 0;
+      // 收集該專案關聯的所有子資源 ID 與 Google Drive 檔案 ID
+      const rawIds = [];
+      const attachmentIds = [];
+      const driveFileIds = new Set();
+
       if (Array.isArray(window.liveView?.lastRawData)) {
-        rawCount = window.liveView.lastRawData.filter((r, idx) => idx > 0 && String(r[2] || "").trim() === projectTag).length;
+        for (let idx = 1; idx < window.liveView.lastRawData.length; idx++) {
+          const row = window.liveView.lastRawData[idx];
+          if (row && String(row[2] || "").trim() === projectTag) {
+            const rawId = String(row[0] || "").trim();
+            if (rawId) rawIds.push(rawId);
+            const driveUrl = String(row[8] || "").trim();
+            const m = driveUrl.match(/[-\w]{25,}/);
+            if (m) driveFileIds.add(m[0]);
+          }
+        }
       }
+
       if (Array.isArray(window.liveView?.lastAttachmentsData)) {
-        attCount = window.liveView.lastAttachmentsData.filter((r, idx) => idx > 0 && String(r[1] || "").trim() === projectTag).length;
+        for (let idx = 1; idx < window.liveView.lastAttachmentsData.length; idx++) {
+          const row = window.liveView.lastAttachmentsData[idx];
+          if (row && String(row[1] || "").trim() === projectTag) {
+            const attId = String(row[0] || "").trim();
+            if (attId) attachmentIds.push(attId);
+            const attUrl = String(row[3] || "").trim();
+            const m = attUrl.match(/[-\w]{25,}/);
+            if (m) driveFileIds.add(m[0]);
+          }
+        }
       }
 
-      let cascadeHint = "";
-      if (rawCount > 0 || attCount > 0) {
-        cascadeHint = `\n\n📌 此專案包含：\n• ${rawCount} 筆商業時間線流水帳\n• ${attCount} 筆專案附件/鏈結\n⚠️ 系統將一併【三表連動級聯物理抹除】，徹底避免殘留孤兒數據！`;
-      }
+      const rawCount = rawIds.length;
+      const attCount = attachmentIds.length;
+      const driveCount = driveFileIds.size;
 
-      const confirmText = `🚨【危險操作警告】\n\n確定要刪除專案【${dispName}】(Tag: ${projectTag}) 嗎？${cascadeHint}\n\n⚠️ 此操作無法復原！`;
+      const isConfirmed = await this.showDeleteConfirmDialog({
+        dispName,
+        projectTag,
+        rawCount,
+        attCount,
+        driveCount
+      });
 
-      if (!confirm(confirmText)) {
+      if (!isConfirmed) {
         return;
       }
 
@@ -555,20 +736,50 @@
       }
 
       if (window.showToast) {
-        window.showToast(`專案【${dispName}】已自看板移除，正在執行三表級聯物理抹除...`, "info");
+        window.showToast(`專案【${dispName}】已自看板移除，正在執行三表與 Google Drive 級聯連帶抹除...`, "info");
       }
 
       // =========================================================================
-      // 🌐 後端非同步級聯物理抹除 (Cascade Delete: Master + Raw + Attachments)
+      // 🌐 後端非同步級聯物理抹除 (Cascade Delete: Master + Raw + Attachments + Google Drive)
       // =========================================================================
       try {
-        // 1. 刪除 Projects_Master 主檔
+        // 1. 🗑️ 物理抹除 Google Drive 實體附件檔案
+        if (typeof sendDriveGasRequest === "function" && driveFileIds.size > 0) {
+          for (const fid of driveFileIds) {
+            console.log(`[ProjectManager] 正在物理刪除 Google Drive 專案附件: ${fid}...`);
+            try {
+              await sendDriveGasRequest("delete_file", { file_id: fid });
+              console.log(`[ProjectManager] ✅ Drive 檔案 ${fid} 已移入垃圾桶並清退總帳！`);
+            } catch (delErr) {
+              console.warn(`[ProjectManager] 刪除 Drive 檔案 ${fid} 警示:`, delErr);
+            }
+          }
+        }
+
+        // 2. 🗑️ 雲端 Google Sheet 三表連帶物理抹除
+        // 2.1 刪除 Memory_Pool_Raw 關聯流水
+        for (const rawId of rawIds) {
+          await window.sendGasRequest("delete_record", {
+            sheet: "Memory_Pool_Raw",
+            id: rawId
+          }).catch(e => console.warn(`刪除雲端流水 ${rawId} 警示:`, e));
+        }
+
+        // 2.2 刪除 Projects_Attachments 關聯附件記錄
+        for (const attId of attachmentIds) {
+          await window.sendGasRequest("delete_record", {
+            sheet: "Projects_Attachments",
+            id: attId
+          }).catch(e => console.warn(`刪除雲端附件 ${attId} 警示:`, e));
+        }
+
+        // 2.3 刪除 Projects_Master 主檔
         await window.sendGasRequest("delete_record", {
           sheet: "Projects_Master",
           id: projectTag
         });
 
-        // 2. 刪除本地 SQLite 該專案之所有 Memory_Pool_Raw 與 Projects_Attachments
+        // 3. 🗑️ 本地 SQLite 級聯物理抹除 + Outbox 隊列
         if (CONFIG.IS_LOCAL_MODE) {
           fetch(`${CONFIG.LOCAL_API_BASE}/action`, {
             method: "POST",
@@ -578,7 +789,7 @@
         }
 
         if (window.showToast) {
-          window.showToast(`🗑️ 專案【${dispName}】三表連動級聯抹除完成 (0 孤兒數據)！`, "success");
+          window.showToast(`🗑️ 專案【${dispName}】三表連動與 Google Drive 級聯抹除完成 (0 孤兒數據)！`, "success");
         }
       } catch (err) {
         console.error("[ProjectManager] 級聯刪除專案失敗:", err);

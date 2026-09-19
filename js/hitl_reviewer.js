@@ -328,15 +328,18 @@ class HitlReviewer {
    * @param {string} logId 
    * @param {Object} overrideCardData - 可選，若用戶在批准時有即時修訂
    * @param {boolean} isFoxlinkGroup - 是否歸入 Foxlink 公務標籤 (預設 true)
+   * @param {string} linkedResourceName - 若手動關聯現有 Google 聯絡人，傳入其 resourceName 進行 UPDATE 合併
    */
-  async approveBusinessCard(logId, overrideCardData = null, isFoxlinkGroup = true) {
+  async approveBusinessCard(logId, overrideCardData = null, isFoxlinkGroup = true, linkedResourceName = null) {
     const card = this.pendingCards.find((c) => (c.log_id === logId || c.entry_id === logId));
     if (!card) throw new Error("找不著指定的待審核名片！");
 
     const targetId = card.log_id || card.entry_id;
     const finalData = overrideCardData || card;
+    const targetResourceName = linkedResourceName || (overrideCardData && overrideCardData.linkedResourceName) || null;
+    const isUpdate = !!targetResourceName;
 
-    console.log(`[HitlReviewer] 🪪 批准名片入庫: ${finalData.name} (${finalData.company})`);
+    console.log(`[HitlReviewer] 🪪 批准名片入庫 (${isUpdate ? 'UPDATE 整合模式' : 'CREATE 新建模式'}): ${finalData.name} (${finalData.company})`);
 
     // 0. 規範化解析與清洗電話號碼 (VCF / E.164 標準)
     let phonesPayload = [];
@@ -397,7 +400,7 @@ class HitlReviewer {
     if (driveUrlNotes) fullNotes += `📎 雲端檔案: ${driveUrlNotes}`;
     fullNotes = fullNotes.trim();
 
-    // 2. 構建 People API Payload (支援 phones 陣列與 primaryPhone)
+    // 2. 構建 People API Payload (支援 phones 陣列、primaryPhone、address 與 website)
     const contactPayload = {
       name: finalData.name,
       phone: primaryPhoneStr,
@@ -405,6 +408,8 @@ class HitlReviewer {
       company: finalData.company || "",
       title: finalData.title || "",
       email: finalData.email || "",
+      address: finalData.address || "",
+      website: finalData.website || finalData.url || "",
       notes: fullNotes
     };
 
@@ -419,17 +424,23 @@ class HitlReviewer {
     const contactsUrl = CONFIG.CONTACTS_GATEWAY_URL;
     if (!contactsUrl) throw new Error("未配置 CONTACTS_GATEWAY_URL！");
 
+    const action = isUpdate ? "update" : "create";
+    if (isUpdate) {
+      contactPayload.resourceName = targetResourceName;
+      console.log(`[HitlReviewer] 🔗 即將發送 UPDATE 至 Google 聯絡人: ${targetResourceName}`);
+    }
+
     const contactRes = await fetch(contactsUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
-        action: "create",
+        action: action,
         data: contactPayload
       })
     });
 
     if (!contactRes.ok) {
-      throw new Error(`Google 通訊錄寫入失敗: ${contactRes.statusText}`);
+      throw new Error(`Google 通訊錄${isUpdate ? '更新' : '寫入'}失敗: ${contactRes.statusText}`);
     }
 
     const contactJson = await contactRes.json();
@@ -464,9 +475,13 @@ class HitlReviewer {
     this._classifyCards();
     this.notify();
 
+    const successMsg = isUpdate
+      ? `🎉 已成功將名片資訊整合更新至 Google 聯絡人 [${finalData.name}]！${isFoxlinkGroup ? '（已標記 Foxlink 公務人脈）' : ''}`
+      : `🎉 名片 [${finalData.name} - ${finalData.company || ''}] 已成功入庫 Google 通訊錄！${isFoxlinkGroup ? '（已標記 Foxlink 公務人脈）' : '（個人人脈）'}`;
+
     return {
       status: "success",
-      message: `🎉 名片 [${finalData.name} - ${finalData.company || ''}] 已成功入庫 Google 通訊錄！${isFoxlinkGroup ? '（已標記 Foxlink 公務人脈）' : '（個人人脈）'}`
+      message: successMsg
     };
   }
 

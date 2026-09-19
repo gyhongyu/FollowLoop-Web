@@ -2359,6 +2359,111 @@ html[data-theme="light-slate"] .btn-draft-discard:hover {
   flex-shrink: 0;
 }
 
+/* ==========================================================================
+   ⏳ 全屏科技感阻斷進度遮罩 (Full-Screen Progress Overlay)
+   ========================================================================== */
+.global-progress-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10, 15, 29, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.global-progress-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.global-progress-card {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.98));
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 35px rgba(99, 102, 241, 0.2);
+  border-radius: 20px;
+  padding: 32px 36px;
+  width: 440px;
+  max-width: 90vw;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: scale(0.92);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.global-progress-overlay.active .global-progress-card {
+  transform: scale(1);
+}
+
+.progress-spinner-ring {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  margin-bottom: 16px;
+}
+
+.progress-spinner-ring .spin-outer {
+  position: absolute;
+  inset: 0;
+  border: 4px solid rgba(99, 102, 241, 0.15);
+  border-top-color: #6366f1;
+  border-right-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.progress-spinner-ring .status-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  transition: all 0.2s ease;
+}
+
+.progress-overlay-title {
+  margin: 0 0 8px 0;
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.3px;
+}
+
+.progress-overlay-desc {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  line-height: 1.5;
+  min-height: 22px;
+  margin-bottom: 14px;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  width: 20%;
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #38bdf8, #10b981);
+  border-radius: 3px;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
 
 
 
