@@ -1,8 +1,8 @@
-// FollowLoop PWA Service Worker (V5.2.4 - Dual-Mode Speed & HITL Cloud Direct)
+// FollowLoop PWA Service Worker (V5.5.4 - Dual-Mode Speed & HITL Memory Set SSOT)
 // 快取策略：靜態資源 Network-First (網路優先+快取備援)，API / GAS 請求 Network-Only (完全直通)
 // 支援 Web Share Target Level 2 檔案接收並安全中轉至 IndexedDB
 
-const CACHE_NAME = 'followloop-pwa-v5.5.3';
+const CACHE_NAME = 'followloop-pwa-v5.5.4';
 
 // 預快取靜態資源清單
 const STATIC_ASSETS = [
@@ -19,12 +19,12 @@ const STATIC_ASSETS = [
   './js/openrouter_extractor.js?v=5.2.4',
   './js/admin_panel.js?v=5.2.4',
   './js/drive_uploader.js?v=5.2.4',
-  './js/hitl_reviewer.js?v=5.5.3',
+  './js/hitl_reviewer.js?v=5.5.4',
   './js/live_view.js?v=5.2.4',
   './js/project_manager.js?v=5.2.4',
   './js/auth.js?v=5.2.4',
   './js/app.js?v=5.2.5',
-  './js/background-pipeline.js?v=5.5.3',
+  './js/background-pipeline.js?v=5.5.4',
   './js/modules/ai_task_logger.js?v=5.5.0',
   './js/modules/crm_detail_modal.js?v=5.5.0',
   './js/modules/draft_manager.js?v=5.5.0',

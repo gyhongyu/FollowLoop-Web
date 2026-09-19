@@ -53,7 +53,17 @@ class BackgroundWorkerPipeline {
     if (!fileId) return false;
     if (this.processedFiles.has(fileId)) return true;
 
-    // 0. 比對 localStorage 持久化記錄 (F5 重整後 0ms 快速命中)
+    // ⚡ 0. 第一防線（SSOT 單一真理）：比對全域全表 File ID 集合 (window.FL_PROCESSED_DRIVE_IDS)
+    if (typeof window.isDriveFileProcessed === "function" && window.isDriveFileProcessed(fileId)) {
+      this.markFileProcessed(fileId);
+      return true;
+    }
+    if (window.FL_PROCESSED_DRIVE_IDS && window.FL_PROCESSED_DRIVE_IDS.has(fileId)) {
+      this.markFileProcessed(fileId);
+      return true;
+    }
+
+    // 1. 比對 localStorage 持久化記錄 (F5 重整後 0ms 快速命中)
     try {
       const saved = localStorage.getItem("fl_processed_card_files");
       if (saved && saved.includes(fileId)) {
@@ -188,6 +198,17 @@ class BackgroundWorkerPipeline {
    * 巡檢單一子箱並派發處理
    */
   async inspectFolder(folderName, handler) {
+    // 0. 🛡️ 前置防禦：確保全表 Drive File ID 真值集合已加載（杜絕手機剛啟動時的競態搶跑穿透）
+    if (!window.FL_PROCESSED_DRIVE_IDS || window.FL_PROCESSED_DRIVE_IDS.size === 0) {
+      if (window.hitlReviewer && typeof window.hitlReviewer.fetchPendingCards === "function") {
+        try {
+          await window.hitlReviewer.fetchPendingCards();
+        } catch (syncErr) {
+          console.warn("[WorkerPipeline] 前置拉取全表真值警告 (繼續嘗試):", syncErr);
+        }
+      }
+    }
+
     // 1. 取得 Google Drive OAuth Token 與 FollowLoop_RawInputs Folder ID
     if (typeof sendDriveGasRequest !== "function") return;
     const tokenRes = await sendDriveGasRequest("get_drive_token", {});
@@ -425,19 +446,26 @@ class BusinessCardHandler {
         });
       }
 
-      // 📦 【0 搬移不可變架構】持久化標記已處理檔案 (localStorage + 記憶體雙重防禦)
+      // 📦 【0 搬移不可變架構】持久化標記已處理檔案 (全域真值 Set + localStorage + 記憶體三重防禦)
       for (const file of fileList) {
+        if (typeof window.markDriveFileProcessed === "function") {
+          window.markDriveFileProcessed(file.id);
+        }
         if (context.pipeline && typeof context.pipeline.markFileProcessed === 'function') {
           context.pipeline.markFileProcessed(file.id); // ⚡ 持久化至 localStorage，F5 後 0ms 命中
         }
         if (typeof sendDriveGasRequest === "function") {
-          sendDriveGasRequest("register_file", {
-            file_id: file.id,
-            filename: file.name,
-            category: "BusinessCards",
-            retention: "PERMANENT",
-            status: "PROCESSED"  // 🛡️ 直接標記為已提煉，杜絕巡檢重複派發
-          }).catch(rErr => console.warn(`[BusinessCardHandler] 登記個人檔案總帳略過:`, rErr));
+          try {
+            await sendDriveGasRequest("register_file", {
+              file_id: file.id,
+              filename: file.name,
+              category: "BusinessCards",
+              retention: "PERMANENT",
+              status: "PROCESSED"  // 🛡️ 嚴格更新總帳為已提煉，杜絕巡檢重複派發
+            });
+          } catch (rErr) {
+            console.warn(`[BusinessCardHandler] 登記個人檔案總帳警示:`, rErr);
+          }
         }
       }
 

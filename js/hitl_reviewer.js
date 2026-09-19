@@ -78,11 +78,32 @@ class HitlReviewer {
         const rows = res.data;
         const pendingList = [];
 
+        // 🛡️ 全域 Drive File ID 真值集合初始化（不依賴本機快取，以雲端資料庫全表為單一真理 SSOT）
+        if (!window.FL_PROCESSED_DRIVE_IDS) {
+          window.FL_PROCESSED_DRIVE_IDS = new Set();
+        }
+
         const queueTag = CONFIG.CARDS_QUEUE_TAG || "CARDS_QUEUE";
 
         // 跳過標頭列 (r=1 開始)
         for (let r = 1; r < rows.length; r++) {
           const row = rows[r];
+
+          // ⚡ 核心修復：無論該行是 APPROVED、PROCESSED 還是 PENDING，只要在資料庫中存在附件圖檔，立即收錄其 File ID 杜絕重複辨識
+          const attRaw = row[8];
+          if (attRaw) {
+            try {
+              const attList = typeof attRaw === "string" && attRaw.startsWith("[") ? JSON.parse(attRaw) : (Array.isArray(attRaw) ? attRaw : []);
+              if (Array.isArray(attList)) {
+                for (const att of attList) {
+                  if (att.id) window.FL_PROCESSED_DRIVE_IDS.add(att.id);
+                  const m = (att.url || "").match(/[-\w]{25,}/);
+                  if (m) window.FL_PROCESSED_DRIVE_IDS.add(m[0]);
+                }
+              }
+            } catch (e) {}
+          }
+
           const status = (row[10] || "").toString().trim().toUpperCase();
 
           if (status === "PENDING_REVIEW" || status === "PENDING") {
@@ -335,8 +356,11 @@ class HitlReviewer {
     // 3. 雲端 Google Sheet + 本地 SQLite 物理抹除 Memory_Pool_Raw 該行
     await this._sendReviewAction(targetId, "REJECT");
 
-    // 4. 🛡️ 持久化 Drive 檔案 ID 至 localStorage，防止打工仔重複提煉已作廢圖檔
+    // 4. 🛡️ 持久化 Drive 檔案 ID 至全域真值 Set 與 localStorage，防止打工仔重複提煉已作廢圖檔
     for (const fid of filesToTrash) {
+      if (typeof window.markDriveFileProcessed === "function") {
+        window.markDriveFileProcessed(fid);
+      }
       if (window.backgroundPipeline && typeof window.backgroundPipeline.markFileProcessed === 'function') {
         window.backgroundPipeline.markFileProcessed(fid);
       } else {
@@ -499,7 +523,10 @@ class HitlReviewer {
           if (fid) {
             console.log(`[HitlReviewer] 嚴格 await 更新個人檔案總帳 (${fid}) 狀態為 PROCESSED...`);
             await sendDriveGasRequest("update_file_status", { file_id: fid, status: "PROCESSED" });
-            // 🛡️ 持久化至 localStorage 防止打工仔重複提煉
+            // 🛡️ 持久化至全域真值 Set 與 localStorage 防止打工仔重複提煉
+            if (typeof window.markDriveFileProcessed === "function") {
+              window.markDriveFileProcessed(fid);
+            }
             if (window.backgroundPipeline && typeof window.backgroundPipeline.markFileProcessed === 'function') {
               window.backgroundPipeline.markFileProcessed(fid);
             } else {
@@ -576,3 +603,15 @@ class HitlReviewer {
 
 // 導出全域單例
 window.hitlReviewer = new HitlReviewer();
+
+// 🛡️ 全域 0ms 真值查重介面 (以資料庫全表記錄為準，徹底擺脫 localStorage 依賴)
+window.isDriveFileProcessed = function(fileId) {
+  if (!fileId) return false;
+  return window.FL_PROCESSED_DRIVE_IDS ? window.FL_PROCESSED_DRIVE_IDS.has(fileId) : false;
+};
+
+window.markDriveFileProcessed = function(fileId) {
+  if (!fileId) return;
+  if (!window.FL_PROCESSED_DRIVE_IDS) window.FL_PROCESSED_DRIVE_IDS = new Set();
+  window.FL_PROCESSED_DRIVE_IDS.add(fileId);
+};
