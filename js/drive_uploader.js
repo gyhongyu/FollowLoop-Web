@@ -144,6 +144,9 @@ class DriveUploader {
 
         if (sessionInitResp.ok || sessionInitResp.status === 200) {
           sessionUrl = sessionInitResp.headers.get("Location") || sessionInitResp.headers.get("location");
+        } else {
+          const errText = await sessionInitResp.text().catch(() => "");
+          console.warn(`[DriveUploader] Resumable Session Init 回應異常 (HTTP ${sessionInitResp.status}):`, errText);
         }
       }
     } catch (e) {
@@ -164,10 +167,12 @@ class DriveUploader {
         reader.onload = async (evt) => {
           try {
             const base64Data = evt.target.result.split(',')[1];
+            const targetCat = (CONFIG.RAW_SCENE_CATEGORIES && CONFIG.RAW_SCENE_CATEGORIES[categoryKey] && CONFIG.RAW_SCENE_CATEGORIES[categoryKey].folder) || categoryKey || (file.name.startsWith("card_") ? "BusinessCards" : "Unclassified");
             const fallbackRes = await sendDriveGasRequest("upload_file", {
               filename: file.name,
               file_b64: base64Data,
               mime_type: file.type || "application/octet-stream",
+              category: targetCat,
               user_notes: notes
             });
             if (fallbackRes.status === "success") {
