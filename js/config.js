@@ -168,7 +168,11 @@ async function detectLocalBackend(isRetry = false) {
   return false;
 }
 
-// 輔助函式：輪詢 Outbox 待同步狀態 (每 15 秒檢查一次)
+// 🌟 全域最新已知資料版本號 (防重比對)
+window._lastDataVersion = null;
+window._isVersionRefreshing = false;
+
+// 輔助函式：輪詢 Outbox 待同步狀態與數據版本號 (每 4 秒極速無感探測)
 async function checkCloudSyncStatus() {
   if (!CONFIG.IS_LOCAL_MODE || isSyncingNow) return;
   try {
@@ -177,6 +181,18 @@ async function checkCloudSyncStatus() {
       const data = await res.json();
       if (data.status === "success") {
         updateBackendStatusUI(true, data.pending_count || 0);
+
+        // ⚡ 數據版本號無感熱感知 (Version Hash Diff)
+        const currentVer = Number(data.data_version);
+        if (!isNaN(currentVer)) {
+          if (window._lastDataVersion === null) {
+            window._lastDataVersion = currentVer;
+          } else if (currentVer > window._lastDataVersion && !window._isVersionRefreshing) {
+            console.log(`⚡ [HotReload] 偵測到本地數據庫版本自增 (${window._lastDataVersion} ➔ ${currentVer})，觸發無感熱感知更新...`);
+            window._lastDataVersion = currentVer;
+            triggerSilentHotReload();
+          }
+        }
         return;
       }
     }
@@ -184,6 +200,40 @@ async function checkCloudSyncStatus() {
     // 若連線中斷，自動降級
     CONFIG.IS_LOCAL_MODE = false;
     updateBackendStatusUI(false);
+  }
+}
+
+// 輔助函式：無感局部熱更新 (不彈 Loading 遮罩、不重置使用者正在輸入的焦點)
+async function triggerSilentHotReload() {
+  if (window._isVersionRefreshing) return;
+  window._isVersionRefreshing = true;
+  try {
+    // 1. 靜默重新拉取雙表數據 (showOverlay = false 絕不跳全屏轉圈圈)
+    if (window.liveView && typeof window.liveView.fetchViewData === "function") {
+      await window.liveView.fetchViewData(false);
+    }
+
+    // 2. 若使用者當前正打開專案詳情彈窗，且未在行內編輯中，局部更新該彈窗的時間軸與附件
+    const detailModal = document.getElementById("detail-modal-backdrop");
+    const isModalOpen = detailModal && detailModal.classList.contains("active");
+    const activeEditId = window.editingTimelineLogId;
+    const activeDelId = window.confirmingDeleteLogId;
+
+    if (isModalOpen && !activeEditId && !activeDelId && window.currentActiveKpiItemCode && window.liveView) {
+      const currentItem = window.liveView.viewRows.find(r => r.itemCode === window.currentActiveKpiItemCode);
+      if (currentItem) {
+        if (typeof window.renderTimelineSpine === "function") {
+          window.renderTimelineSpine(currentItem, null);
+        }
+        if (typeof window.renderProjectAttachments === "function") {
+          window.renderProjectAttachments(currentItem);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ [HotReload] 靜默熱更新略過:", err);
+  } finally {
+    window._isVersionRefreshing = false;
   }
 }
 
@@ -246,8 +296,9 @@ async function triggerCloudSyncNow() {
 window.triggerCloudSyncNow = triggerCloudSyncNow;
 window.checkCloudSyncStatus = checkCloudSyncStatus;
 window.detectLocalBackend = detectLocalBackend;
+window.triggerSilentHotReload = triggerSilentHotReload;
 
-// 腳本載入時立即發動非同步探針並啟動 15s 定時檢查
+// 腳本載入時立即發動非同步探針並啟動 4s 定時檢查
 if (typeof detectLocalBackend === "function") {
   detectLocalBackend();
 }
@@ -255,7 +306,7 @@ setInterval(() => {
   if (CONFIG.IS_LOCAL_MODE) {
     checkCloudSyncStatus();
   }
-}, 15000);
+}, 4000);
 
 // 輔助函式：取得當前生效的 OpenRouter API Key (優先讀取 localStorage 自訂)
 function getOpenRouterApiKey() {
