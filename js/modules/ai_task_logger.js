@@ -13,7 +13,7 @@ class AiTaskLogger {
   startTask(taskName, details = "", taskType = "ai") {
     this.startTime = Date.now();
     this.currentTask = { name: taskName, status: "RUNNING", startTime: this.startTime, type: taskType };
-    const pillLabel = taskType === "upload" ? "⚡ 雲端直傳" : "⚡ 執行中";
+    const pillLabel = taskType === "upload" ? "雲端直傳" : "執行中";
     this.updatePill(pillLabel, "running", taskName);
     this.appendLog(`🚀 [${taskType === "upload" ? "直傳" : "開始"}] ${taskName} ${details ? `(${details})` : ""}`);
   }
@@ -22,7 +22,7 @@ class AiTaskLogger {
     const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
     this.appendLog(`  • [${elapsed}s] ${step} ${details ? `— ${details}` : ""}`, status);
     if (this.currentTask) {
-      this.updatePill(`⚡ ${step} (${elapsed}s)`, "running", this.currentTask.name);
+      this.updatePill(`${step} (${elapsed}s)`, "running", this.currentTask.name);
     }
   }
 
