@@ -696,28 +696,50 @@ window.onSaveEditAttachmentModal = async function () {
     return;
   }
 
-  // 1. 樂觀即時同步修訂記憶體
+  // 1. 取得當前專案與目標附件資訊 (提取 projectTag 防止孤兒化)
+  const item = liveView.viewRows.find((r) => r.id === kpiId);
+  const targetAtt = item?.attachments?.find((a) => a.linkId === linkId);
+  const projectTag = targetAtt?.projectTag || item?.itemCode || "";
+
+  // 2. 樂觀即時同步修訂記憶體 viewRows
   (liveView.viewRows || []).concat(liveView.filteredRows || []).forEach((row) => {
     (row.attachments || []).forEach((att) => {
       if (att.linkId === linkId) {
         att.title = newTitle;
         att.url = newUrl;
+        if (projectTag) att.projectTag = projectTag;
       }
     });
   });
 
+  // 3. 雙向維護底層真值快取 lastAttachmentsData，徹底防禦刷新回滾與狀態遺失
+  if (Array.isArray(window.liveView?.lastAttachmentsData)) {
+    window.liveView.lastAttachmentsData.forEach((row, idx) => {
+      if (idx > 0 && String(row[0]).trim() === linkId) {
+        row[2] = newTitle;
+        row[3] = newUrl;
+        if (projectTag && (!row[1] || row[1] === "")) row[1] = projectTag;
+      }
+    });
+  }
+  if (typeof window.liveView?.saveLocalCache === "function") {
+    window.liveView.saveLocalCache();
+  }
+
   onCloseEditAttachmentModal();
   renderLiveViewGrid();
 
-  const item = liveView.viewRows.find((r) => r.id === kpiId);
   if (item) renderProjectAttachments(item);
 
-  // 2. 直寫後端數據庫
+  // 4. 直寫後端數據庫 (攜帶 project_tag 避免後端覆蓋為空孤兒化)
   showToast(CONFIG.IS_LOCAL_MODE ? "⚡ [本地 0ms] 正在修訂附件..." : "☁️ 正在同步修訂附件...", "info");
   try {
+    const payloadRow = { link_id: linkId, title: newTitle, url: newUrl };
+    if (projectTag) payloadRow.project_tag = projectTag;
+
     const res = await sendGasRequest("batch_append_raw", {
       sheet: "Projects_Attachments",
-      rows: [{ link_id: linkId, title: newTitle, url: newUrl }]
+      rows: [payloadRow]
     });
     if (res && res.status === "success") {
       showToast(CONFIG.IS_LOCAL_MODE ? "⚡ 附件修訂已即時儲存至本地 SQLite！" : "✅ 附件修訂已更新至雲端！", "success");
