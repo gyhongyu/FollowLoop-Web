@@ -190,11 +190,11 @@ class OpenRouterExtractor {
 
 【🚨 FollowLoop 核心天條 (Core Invariants)】：
 1. 嚴格忠於事實：嚴禁無中生有編造未提及的人名、會議細節、價格、時間或原因！
-2. ⏰ 素材時間物理真值與精確推算：
-   - 若素材中包含明確發生日期、申請日期或相對時間詞（如『昨天』、『8/25』）：
-   - 必須精確錨定推算出事件發生的真實西元日期（格式：YYYY/MM/DD）。
-   - 強制在 update_log 輸出的最開頭第一行第一句標註該西元日期（例如：'2026/08/27 客戶動態：...' 或 '2026/08/27 提案摘要：...'）。
-   - 嚴禁在流水帳記要中殘留模糊的『昨天』、『今天』、『前天』字眼！
+2. ⏰ 素材時間物理真值與精確推算 (硬性天條)：
+   - update_log 開頭第一句【必須且絕對】以西元日期（格式：YYYY/MM/DD）為開頭！
+   - 若素材中包含明確發生日期、申請日期或相對時間詞（如『昨天』、『8/25』），必須精確錨定推算出事件發生的真實西元日期（例如：'2026/08/27 客戶動態：...'）。
+   - 【🚨 自動降級守門】：若素材為無日期之隨手記、對話或指令，強制以【系統基準日期：${todayStr}】作為預設事發日開頭（例如：'${todayStr} 會議紀要：...'）！
+   - 嚴禁產出開頭未帶 YYYY/MM/DD 日期的 update_log，嚴禁在記要中殘留模糊的『昨天』、『今天』、『前天』字眼！
 3. 🎯 文檔與情報有效性判定：
    - 只要輸入包含任何具體業務事實、專案申請、技術指標、客戶訴求或會議進展，**必須視為有效情報 (is_valid: true)**。
    - 僅當輸入為純粹無意義亂碼、空白或測試字元（如 'asdf', '123'）時，才輸出 {"is_valid": false, "reason": "純測試無意義字元"}。
@@ -202,7 +202,7 @@ class OpenRouterExtractor {
    - 比對下方【已知專案主檔字典】，若明確命中客戶/窗口/產品（如 SSD、線材、VVDN、SSSTC）則填入對應 project_tag。
    - 若為自我工作備忘、跨專案行程，映射至 Item_1_01；若為全新客戶或暫無對應專案，填寫 "NEW_UNCLASSIFIED"！
 5. 📝 update_log 輸出規範：
-   - 必須以標準繁體中文撰寫，條理分明（包含事實背景、核心訴求/決策、下一步行動）。
+   - 開頭必須為 YYYY/MM/DD，並以標準繁體中文撰寫，條理分明（包含事實背景、核心訴求/決策、下一步行動）。
    - 嚴禁包含任何 http/https 網址（網址由附件庫接管）。
 6. 格式約束：必須直接輸出純 JSON 物件，嚴禁包含 markdown 代碼塊標記（如 \`\`\`json）。
 
@@ -219,6 +219,20 @@ ${projectsContext}
   "update_log": "帶精確西元日期開頭(如 2026/08/27 ...)、條理分明、客觀專業的繁體中文條列式商業流水帳記要(包含事實與結論)",
   "confidence_score": 0.85
 }`;
+  }
+
+  /**
+   * 確保 update_log 具有合法的 YYYY/MM/DD 開頭，若無則以系統當前基準日補齊 (Auto-Fallback)
+   */
+  ensureDatePrefix(text, fallbackDateStr) {
+    if (!text || typeof text !== "string") text = "";
+    const clean = text.trim();
+    if (!clean) return "";
+    if (!/^\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}/.test(clean)) {
+      const today = fallbackDateStr || new Date().toISOString().slice(0, 10).replace(/-/g, "/");
+      return `${today} ${clean}`;
+    }
+    return clean;
   }
 
   /**
@@ -339,7 +353,7 @@ ${projectsContext}
         entity_target: parsed.entity_target || "未指定客戶 (待編輯)",
         target_purpose: parsed.target_purpose || "",
         action_taken: parsed.action_taken || "最新跟進紀錄",
-        update_log: parsed.update_log || cleanText,
+        update_log: this.ensureDatePrefix(parsed.update_log || cleanText),
         attachment_links: "",
         confidence_score: parsed.confidence_score || 0.85
       };
@@ -356,7 +370,7 @@ ${projectsContext}
         entity_target: "未指定客戶 (待編輯)",
         target_purpose: "",
         action_taken: "速記備忘",
-        update_log: cleanText,
+        update_log: this.ensureDatePrefix(cleanText),
         attachment_links: "",
         confidence_score: 0.5,
         error_message: err.message
@@ -414,7 +428,7 @@ ${projectsContext}
       entity_target: parsed.entity_target || "未指定客戶 (待編輯)",
       target_purpose: parsed.target_purpose || "",
       action_taken: parsed.action_taken || "圖片/截圖分析動態",
-      update_log: parsed.update_log || "完成圖片 OCR 解析與動態提煉",
+      update_log: this.ensureDatePrefix(parsed.update_log || "完成圖片 OCR 解析與動態提煉"),
       attachment_links: "",
       confidence_score: parsed.confidence_score || 0.90
     };
@@ -472,7 +486,7 @@ ${projectsContext}
       entity_target: parsed.entity_target || "未指定客戶 (待編輯)",
       target_purpose: parsed.target_purpose || "",
       action_taken: parsed.action_taken || "語音錄音轉寫紀錄",
-      update_log: parsed.update_log || "完成錄音轉寫與動態提煉",
+      update_log: this.ensureDatePrefix(parsed.update_log || "完成錄音轉寫與動態提煉"),
       attachment_links: "",
       confidence_score: parsed.confidence_score || 0.90
     };
@@ -522,7 +536,7 @@ ${projectsContext}
       entity_target: parsed.entity_target || "未指定客戶 (待編輯)",
       target_purpose: parsed.target_purpose || "",
       action_taken: parsed.action_taken || `解析文檔 [${fileName}]`,
-      update_log: parsed.update_log || defaultLog,
+      update_log: this.ensureDatePrefix(parsed.update_log || defaultLog),
       attachment_links: "",
       confidence_score: parsed.confidence_score || (isValid ? 0.90 : 0.60)
     };

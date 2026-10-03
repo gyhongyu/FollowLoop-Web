@@ -198,6 +198,11 @@ function initIngestionModule() {
         }
 
         const isUrlItem = !!extracted.attachment_links;
+        let finalUpdateLog = isUrlItem ? (extracted.update_log || "") : (extracted.update_log || text);
+        if (finalUpdateLog && !isUrlItem && !/^\s*\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}/.test(finalUpdateLog)) {
+          const fallbackDate = (cleanTimestamp ? cleanTimestamp.slice(0, 10) : new Date().toISOString().slice(0, 10)).replace(/-/g, "/");
+          finalUpdateLog = `${fallbackDate} ${finalUpdateLog.trim()}`;
+        }
 
         // 100% 精確對齊 11 欄 RAW_HEADERS
         const rawRow = [
@@ -208,7 +213,7 @@ function initIngestionModule() {
           extracted.target_purpose || "",                   // 4. E target_purpose
           "",                                               // 5. F our_advantages
           extracted.action_taken || "最新跟進紀錄",          // 6. G action_taken
-          isUrlItem ? (extracted.update_log || "") : (extracted.update_log || text), // 7. H update_log (若為外鏈，留空選填)
+          finalUpdateLog,                                   // 7. H update_log (若為外鏈，留空選填；否則保證帶西元日期開頭)
           extracted.attachment_links || "",                 // 8. I attachment_links
           String(extracted.confidence_score || 0.85),       // 9. J confidence_score
           "PENDING_REVIEW"                                  // 10. K agent_status
@@ -231,7 +236,7 @@ function initIngestionModule() {
           entity_target: extracted.entity_target || "未指定客戶 (待編輯)",
           target_purpose: extracted.target_purpose || "",
           action_taken: extracted.action_taken || (isUrlItem ? "登記專案參考資源" : "最新跟進紀錄"),
-          update_log: isUrlItem ? (extracted.update_log || "") : (extracted.update_log || text),
+          update_log: finalUpdateLog,
           raw_text: text,
           attachment_links: extracted.attachment_links || "",
           confidence_score: String(extracted.confidence_score || 0.85),
